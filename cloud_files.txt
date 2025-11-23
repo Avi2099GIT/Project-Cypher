@@ -1,0 +1,35 @@
+﻿
+FullName                                                                                                                Length
+--------                                                                                                                ------
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\__init__.py                                                  0
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\api\intent_handler.py                                     2048
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\api\main.py                                               3445
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\api\requirements.txt                                        65
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\api\routes_intent.py                                      1737
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\api\tts.py                                                 673
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\api\__pycache__\intent_handler.cpython-314.pyc            1918
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\api\__pycache__\main.cpython-314.pyc                      6954
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\api\__pycache__\routes_intent.cpython-314.pyc             3058
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\api\__pycache__\tts.cpython-314.pyc                       1198
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\__init__.py                                            0
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\api\intent_handler.py                               2048
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\api\main.py                                         3445
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\api\requirements.txt                                  65
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\api\routes_intent.py                                1737
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\api\tts.py                                           673
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\api\__pycache__\intent_handler.cpython-314.pyc      1918
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\api\__pycache__\main.cpython-314.pyc                6954
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\api\__pycache__\routes_intent.cpython-314.pyc       3058
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\api\__pycache__\tts.cpython-314.pyc                 1198
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\orchestrator\runner.py                               921
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\orchestrator\__init__.py                               0
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\orchestrator\__pycache__\runner.cpython-314.pyc     2897
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\orchestrator\__pycache__\__init__.cpython-314.pyc    187
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\cloud\__pycache__\__init__.cpython-314.pyc                 174
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\orchestrator\runner.py                                     921
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\orchestrator\__init__.py                                     0
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\orchestrator\__pycache__\runner.cpython-314.pyc           2897
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\orchestrator\__pycache__\__init__.cpython-314.pyc          187
+F:\Projects\Project Cypher\cypher_real_phase0_phase1_full\cloud\__pycache__\__init__.cpython-314.pyc                       174
+
+

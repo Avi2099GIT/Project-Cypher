@@ -1,0 +1,7 @@
+python-dotenv
+requests
+simpleaudio
+sounddevice
+numpy
+webrtcvad
+pydub

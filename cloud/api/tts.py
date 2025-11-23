@@ -1,27 +1,23 @@
 # cloud/api/tts.py
-"""
-Phase-1B: Server does NOT generate TTS.
-The TTS endpoint exists only so the client has a valid route.
-"""
+import os
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from dotenv import load_dotenv
+load_dotenv()
 
-from fastapi import APIRouter, Request
+router = APIRouter()
 
-router = APIRouter(prefix="/v1")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    print("[cloud.api.tts] WARNING: OPENAI_API_KEY not set. TTS endpoints will be disabled.")
 
+class TTSIn(BaseModel):
+    text: str
+    voice: str | None = None
 
-@router.post("/tts")
-async def tts_stub(request: Request):
-    """
-    Phase 1B:
-    - Client handles TTS locally.
-    - Server should NEVER require OPENAI_API_KEY.
-    - Always return a simple JSON response.
-    """
-    data = await request.json()
-    text = data.get("text", "")
-
-    return {
-        "status": "ok",
-        "note": "Server-side TTS disabled in Phase 1B. Client must call OpenAI TTS directly.",
-        "echo": text
-    }
+@router.post("/v1/server_tts")
+async def server_tts(payload: TTSIn):
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=501, detail="Server-side TTS not configured (OPENAI_API_KEY missing). Use client-side TTS in Phase1.")
+    # Phase-1: simply echo note. Full server-side TTS implemented in Phase-2.
+    return {"status":"ok", "note":"Server-side TTS disabled in Phase1; use client TTS."}
