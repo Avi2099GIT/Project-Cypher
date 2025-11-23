@@ -1,28 +1,25 @@
+# cloud/api/main.py
 import os
 from fastapi import FastAPI, HTTPException, Request, Header, Depends
 from .tts import router as tts_router
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
-
-from cloud.api import routes_intent
-from cloud.api.intent_handler import handle_intent   # NEW ← Phase 1B
-
 from dotenv import load_dotenv
-load_dotenv()  # loads .env in project root or cloud/api/.env
 
-SECRET_KEY = os.environ.get('CY_SECRET','change-this-for-prod')
+load_dotenv()  # load root .env by default
+
+SECRET_KEY = os.environ.get('CY_SECRET', 'change-this-for-prod')
 ALGORITHM = 'HS256'
 
-app = FastAPI(title='Cypher API (Phase1B)')
+app = FastAPI(title='Cypher API (Phase0+1 REAL)')
 app.include_router(tts_router)
+
+# include routes_intent router (safe because routes_intent no longer imports main)
+from . import routes_intent
 app.include_router(routes_intent.router)
 
 DEVICE_REGISTRY = {}
-
-# ---------------------------
-# DEVICE REGISTRATION
-# ---------------------------
 
 class DeviceRegister(BaseModel):
     device_id: str
@@ -39,10 +36,10 @@ def register_device(payload: DeviceRegister):
     token = jwt.encode({'sub': payload.device_id, 'exp': expire}, SECRET_KEY, algorithm=ALGORITHM)
     return {'device_id': payload.device_id, 'status': 'registered', 'token': token}
 
-
-# ---------------------------
-# TOKEN VERIFICATION
-# ---------------------------
+class TranscriptIn(BaseModel):
+    device_id: str
+    transcript: str
+    metadata: dict | None = None
 
 def verify_token(authorization: str | None = Header(None)):
     if not authorization:
@@ -57,58 +54,14 @@ def verify_token(authorization: str | None = Header(None)):
     except JWTError:
         raise HTTPException(status_code=401, detail='Invalid token')
 
-
-# ---------------------------
-# TRANSCRIPT ENDPOINT
-# ---------------------------
-
-class TranscriptIn(BaseModel):
-    device_id: str
-    transcript: str
-    metadata: dict | None = None
-
 @app.post('/v1/transcript')
 def receive_transcript(payload: TranscriptIn, device_id: str = Depends(verify_token)):
-    return {
-        'device_id': payload.device_id,
-        'received_transcript': payload.transcript,
-        'server_time': datetime.utcnow().isoformat()
-    }
+    # Persist/forward in Phase-2. For Phase-1 return echo.
+    return {'device_id': payload.device_id, 'received_transcript': payload.transcript, 'server_time': datetime.utcnow().isoformat()}
 
-
-# ---------------------------
-# INTENT ENDPOINT — Phase 1B
-# ---------------------------
-
-class IntentIn(BaseModel):
-    device_id: str
-    intent: str
-    params: dict | None = None
-
-@app.post('/v1/intent')
-def handle_intent_phase1b(payload: IntentIn, device_id: str = Depends(verify_token)):
-    
-    # Call Phase 1B handler instead of LangGraphRunner
-    handler_output = handle_intent(payload.intent, payload.params or {})
-    
-    return {
-        'device_id': payload.device_id,
-        'intent': payload.intent,
-        'result': handler_output.get('result'),
-        'reply_text': handler_output.get('reply_text'),
-        'server_time': datetime.utcnow().isoformat()
-    }
-
-
-# ---------------------------
-# SERVER-SIDE TTS (for future phases)
-# ---------------------------
-
+# Keep TTS endpoint as a placeholder (server-side TTS in Phase2)
 @app.post('/v1/tts')
 async def tts_endpoint(request: Request):
     data = await request.json()
     text = data.get('text','')
-    return {
-        'status':'ok',
-        'note':'clients should call OpenAI TTS directly in Phase1B'
-    }
+    return {'status':'ok','note':'clients should call OpenAI TTS directly in Phase1'}
