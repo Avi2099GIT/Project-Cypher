@@ -10,24 +10,13 @@ class PlannerAgentH:
     """
     PlannerAgentH
 
-    Input:
-        A list of *SAFE, ENTITY-ENRICHED intents* from:
-          IntentAgent → EntityAgent → SafetyAgent
-
-    Output:
-        Concrete sequence of tool calls:
-        [
-          {"tool": "time", "args": {...}},
-          {"tool": "weather", "args": {...}},
-          {"tool": "os_control", "args": {...}},
-          ...
-        ]
-
-    Responsibilities:
-      • Ordering
-      • Tool selection
-      • Argument passthrough
-      • Dropping invalid intents
+    Routes intents to:
+      • calendar_google (PRIMARY)
+      • tasks (google tasks later)
+      • notes
+      • OS
+      • web
+      • time/weather
     """
 
     def plan(self, intents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -36,7 +25,6 @@ class PlannerAgentH:
 
         steps: List[Dict[str, Any]] = []
 
-        # Prioritize low-numbered first (explicit > inferred)
         ordered = sorted(intents, key=lambda i: i.get("priority", 5))
 
         for intent in ordered:
@@ -69,37 +57,37 @@ class PlannerAgentH:
 
         # ---- OS CONTROL --------------------------------
         if itype == "os_control":
-            return {
-                "tool": "os_control",
-                "args": params,
-            }
+            return {"tool": "os_control", "args": params}
 
         # ---- NOTES -------------------------------------
         if itype == "notes":
-            return {
-                "tool": "notes",
-                "args": params,
-            }
+            return {"tool": "notes", "args": params}
 
         # ---- TASKS -------------------------------------
         if itype == "tasks":
             return {
-                "tool": "tasks",
+                "tool": "google_tasks",
                 "args": params,
             }
 
-        # ---- CALENDAR ----------------------------------
+        # ---- GOOGLE CALENDAR (PRIMARY) -----------------
         if itype == "calendar":
             return {
-                "tool": "calendar",
+                "tool": "calendar_google",
+                "args": params,
+            }
+        
+         # ---- GOOGLE TASKS
+        if itype == "google_tasks":
+            return {
+                "tool": "google_tasks",
                 "args": params,
             }
 
-        # ---- FALLBACK HANDLING --------------------------
+
+        # ---- CHAT --------------------------------------
         if itype == "chat":
-            # Chat-only intent → intentionally skip
             return None
 
-        # Unknown intent → ignore
         logger.warning("PlannerAgentH: Unrecognized intent type '%s'", itype)
         return None

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from typing import Dict, Any, List, Optional
-
+from .tools_google_calendar import calendar_google_tool
 from .tools_base import RegisteredTool, ToolContext
 from .tools import (
     time_tool,
@@ -15,7 +15,7 @@ from .tools import (
     tasks_tool,
     calendar_tool,
 )
-
+from cloud.api.assistant.tools_google_tasks import google_tasks_tool
 
 class ToolRegistry:
     """
@@ -77,7 +77,6 @@ def register_builtin_tools() -> None:
     - os_list_dir
     - os_control
     - notes
-    - tasks
     - calendar
     """
     global _registered
@@ -125,6 +124,18 @@ def register_builtin_tools() -> None:
             func=time_tool,
         )
     )
+    # try:
+    #     tool_registry.register(
+    #         RegisteredTool(
+    #             name="calendar_google",
+    #             description="Google Calendar integration (create/list/delete events).",
+    #             func=calendar_google_tool,
+    #         )
+    #     )
+    # except Exception as e:
+    #     print("Google Calendar tool not registered: %s", e)
+
+
 
     # -------------- weather ---------------
     tool_registry.register(
@@ -197,31 +208,38 @@ def register_builtin_tools() -> None:
     )
 
     # ---------------- tasks ---------------
-    tool_registry.register(
-        RegisteredTool(
-            name="tasks",
-            description=(
-                "Manage simple tasks / reminders. "
-                "Args: action ('add'|'list'|'complete'|'clear'), "
-                "text (for 'add'), id (for 'complete')."
-            ),
-            func=tasks_tool,
-        )
-    )
+    # tool_registry.register(
+    #     RegisteredTool(
+    #         name="tasks",
+    #         description=(
+    #             "Manage simple tasks / reminders. "
+    #             "Args: action ('add'|'list'|'complete'|'clear'), "
+    #             "text (for 'add'), id (for 'complete')."
+    #         ),
+    #         func=tasks_tool,
+    #     )
+    # )
 
     # -------------- calendar --------------
     tool_registry.register(
         RegisteredTool(
-            name="calendar",
+            name="calendar_google",
             description=(
-                "Lightweight per-device calendar. "
-                "Understands phrases like 'Add calendar event Meeting at 5 PM' "
-                "or 'Show my calendar'. Args: action ('add'|'list'|'clear'), "
-                "title, when."
+                "Google Calendar integration (create/list/delete events)."
             ),
-            func=calendar_tool,
+            func=calendar_google_tool,
         )
     )
+
+    
+
+    tool_registry.register(
+        RegisteredTool(
+        name="google_tasks",
+        description="Manage Google Tasks: add, list, complete, clear",
+        func=google_tasks_tool,)
+    )
+
 
 # Auto-register all tools at import time
 register_builtin_tools()

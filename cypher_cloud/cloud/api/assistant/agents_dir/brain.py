@@ -1,4 +1,3 @@
-# cloud/api/assistant/agents_dir/brain.py
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -24,7 +23,7 @@ class CypherBrain:
       2) EntityAgent      → resolve entities & parameters
       3) SafetyAgent      → filter / block dangerous intents
       4) PlannerAgentH    → map intents → tool steps
-      5) ExecutorAgent    → run tools (time, weather, OS, etc.)
+      5) ExecutorAgent    → run tools (time, weather, OS, calendar, etc.)
       6) VerifierAgent    → inspect results
       7) ChatAgent        → generate final reply
     """
@@ -42,20 +41,13 @@ class CypherBrain:
         message: str,
         ctx: Dict[str, Any],
     ) -> tuple[str, List[Dict[str, Any]]]:
-        """
-        Main entry point used by the FastAPI router.
-
-        ctx should contain:
-          - device: dict
-          - history: list[dict]
-        """
         device = ctx.get("device") or {"device_id": "local-dev"}
         history: List[Dict[str, Any]] = ctx.get("history") or []
 
         # 1) Intents
         intents = await self.intent_agent.parse(message, history)
 
-        # If only 'chat' → skip tools completely
+        # Pure chat
         if len(intents) == 1 and intents[0].get("type") == "chat":
             reply = await chat_agent.run(
                 message=message,
@@ -65,14 +57,12 @@ class CypherBrain:
             )
             return reply, []
 
-        # 2) Entity resolution
+        # 2) Entities
         enriched = self.entity_agent.enrich(intents, message, ctx)
 
-        # 3) Safety filter
+        # 3) Safety
         safe_intents, blocked = self.safety_agent.filter(enriched)
-
         if not safe_intents:
-            # All blocked → explain
             details = ", ".join(i.get("reason", "blocked") for i in blocked) or "unsafe action"
             reply = (
                 "I’ve blocked this request for safety reasons "
@@ -82,9 +72,7 @@ class CypherBrain:
 
         # 4) Plan tool calls
         steps = self.planner.plan(safe_intents)
-
         if not steps:
-            # Nothing to execute, fallback to chat
             reply = await chat_agent.run(
                 message=message,
                 history=history,
@@ -101,17 +89,41 @@ class CypherBrain:
         # 6) Verification
         verification = self.verifier.analyse(tools_meta)
 
-        # 7) Final answer via ChatAgent using tool results as context
+        # 7) Build a compact tool summary for ChatAgent
         tool_summary_lines: List[str] = []
         for t in tools_meta:
             name = t.get("tool")
+            result = t.get("result")
             if "error" in t:
                 tool_summary_lines.append(f"{name}: ERROR → {t['error']}")
-            else:
-                preview = str(t.get("result"))[:400]
-                tool_summary_lines.append(f"{name}: {preview}")
+                continue
 
-        tools_block = "\n\n[Tool results]\n" + "\n".join(tool_summary_lines) if tool_summary_lines else ""
+            # Special case: calendar list
+            if name == "calendar_google" and isinstance(result, dict):
+                if result.get("mode") == "list" and result.get("status") == "ok":
+                    events = result.get("events") or []
+                    if not events:
+                        tool_summary_lines.append("calendar_google: no upcoming events.")
+                    else:
+                        lines = []
+                        for ev in events[:5]:
+                            title = ev.get("title") or "Untitled"
+                            start = ev.get("start") or "unknown time"
+                            lines.append(f"{start} — {title}")
+                        tool_summary_lines.append(
+                            "calendar_google: upcoming events:\n" + "\n".join(lines)
+                        )
+                    continue
+
+            # Generic preview
+            preview = str(result)[:400]
+            tool_summary_lines.append(f"{name}: {preview}")
+
+        tools_block = (
+            "\n\n[Tool results]\n" + "\n".join(tool_summary_lines)
+            if tool_summary_lines
+            else ""
+        )
 
         augmented_message = message + tools_block
 
@@ -122,13 +134,12 @@ class CypherBrain:
             tools_used=tools_meta,
         )
 
-        # If something failed, gently mention it
         if not verification["ok"]:
             failed_names = ", ".join(verification["failed_tools"])
             reply = (
                 reply.strip()
                 + f"\n\n(Note: some tools failed internally: {failed_names}. "
-                "I still returned what I could.)"
+                  "I still returned what I could.)"
             )
 
         return reply, tools_meta

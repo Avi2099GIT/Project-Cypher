@@ -7,25 +7,10 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from dotenv import load_dotenv
 
-from .tools_registry import tool_registry, register_builtin_tools
+from .tools_registry import tool_registry
 from .tools_base import ToolContext
 
 load_dotenv()
-
-# -------------------------------------------------------------------
-# Debug: verify OpenAI wiring at import time
-# -------------------------------------------------------------------
-print("=== CYPHER LLM DEBUG START ===")
-print("ENV OPENAI API KEY:", bool(os.getenv("OPENAI_API_KEY")))
-
-try:
-    import openai  # type: ignore
-    print("OPENAI LIB RESULT: imported")
-except Exception as e:  # pragma: no cover
-    openai = None  # type: ignore
-    print("OPENAI LIB RESULT: failed ->", repr(e))
-
-print("=== CYPHER LLM DEBUG END ===")
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +25,7 @@ PlannerDecisionMode = Literal["chat", "tools", "mixed", "mcp"]
 
 
 class PlannerDecision(Dict[str, Any]):
-    """
-    Dict-like decision object with convenience accessors:
-
-        decision.mode
-        decision.tools
-    """
+    """Dict-like decision object with convenience accessors."""
 
     @property
     def mode(self) -> PlannerDecisionMode:
@@ -56,27 +36,29 @@ class PlannerDecision(Dict[str, Any]):
         return self.get("tools", [])
 
 
-# Ensure builtin tools are registered once
-#register_builtin_tools()
-
-
 # -------------------------------------------------------------------
 # OpenAI helper
 # -------------------------------------------------------------------
 
+try:
+    import openai  # type: ignore
+except Exception:  # pragma: no cover
+    openai = None  # type: ignore
+    logger.warning("OpenAI library not available; LLM calls will fail.")
+
+
 async def _call_openai_chat(*, prompt: str, system_prompt: str, model: str) -> str:
     """
     Thin wrapper around OpenAI Chat Completions.
-
     Returns a string; caller is responsible for interpreting/parsing.
     """
     if openai is None:
-        logger.warning("OpenAI library not installed; falling back to local logic.")
+        logger.warning("OpenAI library not installed.")
         return "LLM ERROR: openai library not installed"
 
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        logger.warning("OPENAI_API_KEY missing; falling back to local logic.")
+        logger.warning("OPENAI_API_KEY missing.")
         return "LLM ERROR: missing API key"
 
     try:
@@ -90,10 +72,9 @@ async def _call_openai_chat(*, prompt: str, system_prompt: str, model: str) -> s
             ],
             temperature=0.2,
         )
-
         return (resp.choices[0].message.content or "").strip()
     except Exception as e:  # pragma: no cover
-        logger.exception("LLM planner call failed: %s", e)
+        logger.exception("LLM planner/chat call failed: %s", e)
         return f"LLM ERROR: {e}"
 
 
@@ -104,10 +85,7 @@ async def _call_openai_chat(*, prompt: str, system_prompt: str, model: str) -> s
 class ChatAgent:
     """
     LLM-powered chat agent.
-
-    Responsibilities:
-    - Take user message + short history + optional tool results
-    - Call LLM to generate a natural-language reply
+    Takes user message + history + optional tool results and returns a reply.
     """
 
     def __init__(self, model: str = OPENAI_MODEL_CHAT) -> None:
@@ -120,9 +98,7 @@ class ChatAgent:
         device: Optional[Dict[str, Any]] = None,
         tools_used: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
-        # For now we let the LLM handle greetings, etc.
-
-        # Build compact history
+        # Compact history
         history_snippets = [
             f"{h.get('role', 'user')}: {h.get('content', '')}"
             for h in history[-5:]
@@ -142,12 +118,23 @@ class ChatAgent:
             device_id = device.get("device_id") or device.get("id") or "unknown-device"
             device_block = f"\n\nDevice: {device_id}"
 
+        # IMPORTANT: no emojis / markdown, to avoid PowerShell mojibake
         system_prompt = (
-            "You are Cypher, an AI operating system assistant (Jarvis-like). "
-            "You reply briefly, clearly, and helpfully. "
-            "You may see condensed history and tool results. "
-            "Use them to stay context-aware, but do not mention raw JSON or internal structures."
+        "You are Cypher, an AI operating system assistant (Jarvis-like). "
+        "You reply briefly, clearly, and helpfully. "
+        "You may see condensed history and tool results. "
+        "Avoid using emojis or non-ASCII symbols in your replies. "
+        "Prefer plain text and simple Markdown only."
+        "Use them to stay context-aware, but do not mention raw JSON or internal structures. "
+        "If a tool result includes a field named 'htmlLink' (for example from Google Calendar), "
+        "ALWAYS present that exact URL as the link and NEVER construct or guess Google Calendar URLs yourself."
+        "print the EXACT full URL as plain text.\n"
+        "Do NOT wrap links in Markdown.\n"
+        "DO NOT shorten URLs.\n"
+        "DO NOT generate Google links yourself.\n"
+        "If a URL is present in tool results, you MUST display THAT URL."
         )
+
 
         user_prompt = (
             "Conversation history (last few turns):\n"
@@ -167,50 +154,32 @@ class ChatAgent:
 
 
 # -------------------------------------------------------------------
-# PlannerAgent — LLM-based routing brain
+# PlannerAgent — (still available, but H-pipeline mostly uses IntentAgent)
 # -------------------------------------------------------------------
 
 class PlannerAgent:
     """
     LLM-powered planner that decides:
-
-    - mode: 'chat' | 'tools' | 'mixed' | 'mcp'
-    - tools: list of { name: str, args: dict } (for tools/mixed)
-
-    Flow:
-    - First apply cheap, deterministic heuristics (time/system).
-    - Otherwise, call LLM with the available tools catalog.
+      - mode: 'chat' | 'tools' | 'mixed' | 'mcp'
+      - tools: list of { name: str, args: dict }
     """
 
     def __init__(self, model: str = OPENAI_MODEL_PLANNER) -> None:
         self.model = model
 
     def _heuristic_plan(self, message: str) -> PlannerDecision:
-        """
-        Simple keyword-based fallback for very common patterns.
-        Used:
-        - As a fast-path before LLM.
-        - As a safety net if LLM fails.
-        """
         msg = message.lower()
 
         if any(k in msg for k in ["time", "clock", "current time"]):
             return PlannerDecision(
-                {
-                    "mode": "tools",
-                    "tools": [{"name": "time", "args": {}}],
-                }
+                {"mode": "tools", "tools": [{"name": "time", "args": {}}]}
             )
 
         if any(k in msg for k in ["system", "os", "machine", "python version"]):
             return PlannerDecision(
-                {
-                    "mode": "tools",
-                    "tools": [{"name": "system_info", "args": {}}],
-                }
+                {"mode": "tools", "tools": [{"name": "system_info", "args": {}}]}
             )
 
-        # Default: just do chat
         return PlannerDecision({"mode": "chat", "tools": []})
 
     async def plan(
@@ -220,77 +189,52 @@ class PlannerAgent:
         device: Optional[Dict[str, Any]] = None,
         forced_mode: Optional[PlannerDecisionMode] = None,
     ) -> PlannerDecision:
-        """
-        Returns a PlannerDecision, always with a safe default.
-        """
-        # 1) Explicit override from caller (rare)
         if forced_mode:
             return PlannerDecision({"mode": forced_mode, "tools": []})
 
-        # 2) Try cheap heuristic first for ultra-common queries
         heuristic_decision = self._heuristic_plan(message)
         if heuristic_decision.mode != "chat":
             return heuristic_decision
 
-        # 3) Build tools catalog snapshot for LLM
-        tools_info: List[Dict[str, Any]] = []
-        for t in tool_registry.list():
-            tools_info.append(
-                {
-                    "name": t.name,
-                    "description": t.description,
-                }
-            )
-
+        tools_info = [
+            {"name": t.name, "description": t.description}
+            for t in tool_registry.list()
+        ]
         tools_json = json.dumps(tools_info, ensure_ascii=False, indent=2)
 
-        # 4) Condensed history
-        history_snippets: List[str] = []
-        for item in history[-5:]:
-            role = item.get("role", "user")
-            content = item.get("content", "")
-            history_snippets.append(f"{role}: {content}")
+        history_snippets = [
+            f"{h.get('role', 'user')}: {h.get('content', '')}"
+            for h in history[-5:]
+        ]
 
         system_prompt = (
             "You are the Planner for Cypher, an AI OS assistant.\n"
-            "Your task: decide how Cypher should handle the user message.\n\n"
-            "You MUST respond ONLY with a valid JSON object (no extra text, no markdown).\n"
-            "JSON schema:\n"
+            "Respond ONLY with valid JSON.\n"
+            "Schema:\n"
             "{\n"
             '  \"mode\": \"chat\" | \"tools\" | \"mixed\" | \"mcp\",\n'
-            "  \"tools\": [\n"
-            "    { \"name\": string, \"args\": object }\n"
-            "  ]\n"
-            "}\n\n"
-            "- Use mode='chat' when no tools are needed.\n"
-            "- Use mode='tools' when tools alone answer the question.\n"
-            "- Use mode='mixed' when tools should be called, then a chat-style explanation returned.\n"
-            "- Prefer 'chat' or 'tools' for now; use 'mcp' only if explicitly requested.\n"
+            "  \"tools\": [ { \"name\": string, \"args\": object } ]\n"
+            "}\n"
         )
 
         user_prompt = (
             "Available tools:\n"
             f"{tools_json}\n\n"
-            "Recent conversation (last few turns):\n"
+            "Recent conversation:\n"
             + "\n".join(history_snippets)
-            + "\n\n"
-            "User message:\n"
+            + "\n\nUser message:\n"
             f"{message}\n\n"
-            "Think internally step-by-step, but output ONLY the final JSON decision."
+            "Think internally, but output ONLY the final JSON decision."
         )
 
         raw = await _call_openai_chat(
-            prompt=user_prompt,
-            system_prompt=system_prompt,
-            model=self.model,
+            prompt=user_prompt, system_prompt=system_prompt, model=self.model
         )
 
         if not raw or raw.startswith("LLM ERROR"):
-            logger.warning("Planner LLM failed or returned error marker, raw=%r", raw)
-            # Fall back to pure heuristic/chat
+            logger.warning("Planner LLM failed, raw=%r", raw)
             return self._heuristic_plan(message)
 
-        # 5) Parse JSON safely
         try:
             decision_data = json.loads(raw)
         except Exception:
@@ -299,14 +243,12 @@ class PlannerAgent:
 
         mode = decision_data.get("mode", "chat")
         if mode not in ("chat", "tools", "mixed", "mcp"):
-            logger.warning("Planner returned invalid mode: %r", mode)
             mode = "chat"
 
         tools_list = decision_data.get("tools") or []
         if not isinstance(tools_list, list):
             tools_list = []
 
-        # Filter tools to only those actually registered
         valid_tool_names = {t.name for t in tool_registry.list()}
         filtered_tools: List[Dict[str, Any]] = []
         for t in tools_list:
@@ -314,25 +256,12 @@ class PlannerAgent:
                 continue
             name = t.get("name")
             if name in valid_tool_names:
-                filtered_tools.append(
-                    {
-                        "name": name,
-                        "args": t.get("args") or {},
-                    }
-                )
-            else:
-                logger.info("Planner requested unknown tool %r; ignoring.", name)
+                filtered_tools.append({"name": name, "args": t.get("args") or {}})
 
-        # If LLM says "tools" but none are valid, degrade to chat
         if mode in ("tools", "mixed") and not filtered_tools:
-            logger.info(
-                "Planner mode %r but no valid tools; degrading to chat.", mode
-            )
             return PlannerDecision({"mode": "chat", "tools": []})
 
-        decision = PlannerDecision({"mode": mode, "tools": filtered_tools})
-        logger.debug("Planner decision: %s", decision)
-        return decision
+        return PlannerDecision({"mode": mode, "tools": filtered_tools})
 
 
 # -------------------------------------------------------------------
@@ -340,13 +269,6 @@ class PlannerAgent:
 # -------------------------------------------------------------------
 
 class ToolExecutorAgent:
-    """
-    Executes tools chosen by PlannerAgent and returns:
-
-    - reply_text: either raw tool result summary or something for ChatAgent
-    - tools_meta: per-tool metadata including raw results
-    """
-
     async def run(
         self,
         decision: PlannerDecision,
@@ -357,41 +279,22 @@ class ToolExecutorAgent:
         tools_meta: List[Dict[str, Any]] = []
 
         if not decision.tools:
-            # Nothing to run
             return "I don't need to call any tools for this.", tools_meta
 
-        # Shared context for tools
-        ctx = ToolContext(
-            device=device or {},
-            history=history,
-            message=message,
-        )
+        ctx = ToolContext(device=device or {}, history=history, message=message)
 
         lines: List[str] = []
-
         for tool_spec in decision.tools:
             name = tool_spec.get("name")
             args = tool_spec.get("args") or {}
 
             try:
                 result = await tool_registry.call(name=name, args=args, ctx=ctx)
-                tools_meta.append(
-                    {
-                        "tool": name,
-                        "args": args,
-                        "result": result,
-                    }
-                )
+                tools_meta.append({"tool": name, "args": args, "result": result})
                 lines.append(f"{name}: {result}")
             except Exception as e:  # pragma: no cover
                 logger.exception("Error executing tool %s: %s", name, e)
-                tools_meta.append(
-                    {
-                        "tool": name,
-                        "args": args,
-                        "error": str(e),
-                    }
-                )
+                tools_meta.append({"tool": name, "args": args, "error": str(e)})
                 lines.append(f"{name}: ERROR: {e}")
 
         reply_text = "\n".join(lines)

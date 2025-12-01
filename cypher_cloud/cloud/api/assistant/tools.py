@@ -409,7 +409,12 @@ async def os_control_tool(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, A
         "gmail": "https://mail.google.com",
         "google": "https://www.google.com",
         "chatgpt": "https://chatgpt.com/",
-        "my website": "https://avinash-karri.netlify.app/"
+        "my website": "https://avinash-karri.netlify.app/",
+        # Cypher dashboard / schedule
+        "schedule": "http://localhost:8501",
+        "my schedule": "http://localhost:8501",
+        "dashboard": "http://localhost:8501",
+        "cypher dashboard": "http://localhost:8501"
     }
 
     for name, url in WEBSITE_ALIASES.items():
