@@ -67,7 +67,15 @@ async def assistant_query(payload: AssistantQuery):
     # --------------------------------------------------------
     # Run Cypher Core Brain
     # --------------------------------------------------------
+    #tracer.clear()
+    ctx["trace_id"] = tracer.new_trace()
     reply_text, tools_used = await brain.process(payload.message, ctx)
+
+
+    trace_id = ctx.get("trace_id")
+    if trace_id:
+        tracer.attach_context(trace_id, ctx)
+
 
     # --------------------------------------------------------
     # Store memory episodes (Memory V2)
@@ -122,19 +130,33 @@ def get_trace():
         "slowest": tracer.slowest_nodes(),
     }
 
-@router.get("/debug/plan")
-async def debug_plan():
-    ctx = memory_service.last_context()
-    plan = ctx.extras.get("plan")
 
+@router.get("/debug/plan")
+async def debug_plan(trace_id: str | None = None):
+
+    # Use latest trace if not provided
+    if not trace_id:
+        events = tracer.to_dict()
+        if not events:
+            return {"error": "No trace data yet"}
+        trace_id = events[-1]["trace_id"]
+
+    ctx = tracer.get_context(trace_id)
+
+    if not ctx:
+        return {"error": f"No context found for trace_id={trace_id}"}
+
+    plan = ctx.get("extras", {}).get("plan")
     if not plan:
-        return {"error": "No plan executed yet"}
+        return {"error": "No plan attached to this trace"}
 
     return {
+        "trace_id": trace_id,
         "chosen": plan.explanation,
         "score": plan.score_breakdown,
         "rejected": plan.rejected,
     }
+
 
 
 @router.get("/debug/trace/heatmap")

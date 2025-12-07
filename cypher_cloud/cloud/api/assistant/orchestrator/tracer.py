@@ -7,7 +7,7 @@ import threading
 import logging
 from collections import defaultdict, Counter
 import datetime
-
+import uuid
 from .node import NodeStatus
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,24 @@ class GraphTracer:
     def __init__(self) -> None:
         self._events: List[GraphEvent] = []
         self._lock = threading.Lock()
+        self._contexts: dict[str, dict] = {}
+
+    def new_trace(self) -> str:
+        """
+        Create a new trace_id. The graph / router is responsible for
+        passing this ID through ExecutionContext so all nodes share it.
+        """
+        return str(uuid.uuid4())
+
+    def attach_context(self, trace_id: str, ctx: dict) -> None:
+        with self._lock:
+            self._contexts[trace_id] = ctx
+
+
+    def get_context(self, trace_id: str):
+        with self._lock:
+            return self._contexts.get(trace_id)
+
 
     # -------------------------
     # RECORD EVENTS
@@ -101,6 +119,7 @@ class GraphTracer:
     def clear(self) -> None:
         with self._lock:
             self._events.clear()
+            self._contexts.clear() 
 
     # -------------------------
     # UI SUPPORT METHODS

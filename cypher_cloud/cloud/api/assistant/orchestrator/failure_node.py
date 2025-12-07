@@ -3,6 +3,8 @@ from cloud.api.assistant.orchestrator.failure.policy import RetryPolicy
 from cloud.api.assistant.orchestrator.failure.breaker import CircuitBreaker
 from cloud.api.assistant.orchestrator.failure.memory import FailureMemory
 from cloud.api.assistant.orchestrator.failure.recovery import RecoveryPlanner
+from cloud.api.assistant.orchestrator.tracer import tracer
+from cloud.api.assistant.orchestrator.node import NodeStatus
 
 import asyncio
 
@@ -31,6 +33,14 @@ class FailureNode:
 
             info = FailureClassifier.classify(error)
 
+            # 🔴 record failure in tracer so /debug/trace sees it
+            tracer.record(
+                trace_id=ctx.trace_id,
+                node="failure",
+                status=NodeStatus.FAILED,
+                message=str(error),
+            )
+
             # Record failure
             self.memory.store(ctx.device, node_name, error)
 
@@ -42,3 +52,7 @@ class FailureNode:
                 if not self.policy.should_retry(info, attempt):
                     break
                 await asyncio.sleep(self.policy.delay(attempt))
+
+        # 🔴 If we saw any failures, make sure the graph knows this
+        if failures:
+            raise RuntimeError("Execution failed — failure node triggered")

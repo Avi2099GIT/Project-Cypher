@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
+/* ======================== TYPES ======================== */
+
 type TraceEvent = {
   trace_id: string;
   timestamp: number;
@@ -34,13 +36,19 @@ type TraceGroup = {
   events: TraceEvent[];
 };
 
+/* ======================== APP ======================== */
+
 export default function TraceInspectorApp() {
   const [data, setData] = useState<TraceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
 
-  // filters / controls
-  const [live, setLive] = useState(false);
+  // ---------- Plan state ----------
+  const [plan, setPlan] = useState<any>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+
+  // ---------- Filters ----------
+  const [live, setLive] = useState(true);
   const [traceSearch, setTraceSearch] = useState("");
   const [nodeFilter, setNodeFilter] = useState("");
   const [minMs, setMinMs] = useState(0);
@@ -48,13 +56,13 @@ export default function TraceInspectorApp() {
   const [slowLimit, setSlowLimit] = useState(300);
   const [criticalLimit, setCriticalLimit] = useState(800);
 
-  // -------- data loading --------
+  /* ======================== LOAD TRACE ======================== */
 
   const load = () => {
     fetch("http://127.0.0.1:8000/v1/assistant/debug/trace")
       .then((res) => res.json())
       .then((json) => {
-        setData(json as TraceResponse);
+        setData(json);
         setLoading(false);
       })
       .catch((err) => {
@@ -73,7 +81,26 @@ export default function TraceInspectorApp() {
     return () => clearInterval(id);
   }, [live]);
 
-  // ----- derived data -----
+  /* ======================== LOAD PLAN ======================== */
+
+  useEffect(() => {
+    if (!selectedTraceId) return;
+
+    setPlanLoading(true);
+    fetch("http://127.0.0.1:8000/v1/assistant/debug/plan")
+      .then((res) => res.json())
+      .then((json) => {
+        setPlan(json);
+        setPlanLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to load plan:", err);
+        setPlan(null);
+        setPlanLoading(false);
+      });
+  }, [selectedTraceId]);
+
+  /* ======================== DERIVED ======================== */
 
   const events = data?.events ?? [];
 
@@ -89,39 +116,31 @@ export default function TraceInspectorApp() {
       if (!byId.has(e.trace_id)) byId.set(e.trace_id, []);
       byId.get(e.trace_id)!.push(e);
     }
-    for (const list of byId.values()) {
-      list.sort((a, b) => a.timestamp - b.timestamp);
-    }
+    for (const list of byId.values()) list.sort((a, b) => a.timestamp - b.timestamp);
     return Array.from(byId.entries()).map(([id, evs]) => ({ id, events: evs }));
   }, [events]);
 
   const slowestNodes: SlowNode[] = (data?.slowest as any) ?? [];
 
-  // ----- filtering -----
-
-  const filteredTraces: TraceGroup[] = useMemo(() => {
+  const filteredTraces = useMemo(() => {
     return traces.filter((t) => {
       if (traceSearch && !t.id.includes(traceSearch)) return false;
 
       if (nodeFilter) {
-        const matchNode = t.events.some((e) =>
+        const match = t.events.some((e) =>
           e.node.toLowerCase().includes(nodeFilter.toLowerCase())
         );
-        if (!matchNode) return false;
+        if (!match) return false;
       }
 
       if (showFailedOnly) {
-        const hasFail = t.events.some(
-          (e) => e.status === "FAILED" || e.status === "ERROR"
-        );
+        const hasFail = t.events.some((e) => e.status === "FAILED" || e.status === "ERROR");
         if (!hasFail) return false;
       }
 
       if (minMs > 0) {
-        const hasSlow = t.events.some(
-          (e) => (e.extra?.duration_ms ?? 0) >= minMs
-        );
-        if (!hasSlow) return false;
+        const slow = t.events.some((e) => (e.extra?.duration_ms ?? 0) >= minMs);
+        if (!slow) return false;
       }
 
       return true;
@@ -130,185 +149,77 @@ export default function TraceInspectorApp() {
 
   const visibleTraces = filteredTraces.length > 0 ? filteredTraces : traces;
 
-  const selectedTrace: TraceGroup | undefined =
+  const selectedTrace =
     selectedTraceId != null
       ? visibleTraces.find((t) => t.id === selectedTraceId)
-      : visibleTraces[visibleTraces.length - 1]; // default → most recent visible
+      : visibleTraces[visibleTraces.length - 1];
 
-  // Heatmap color helper
-  function cellColor(ev: TraceEvent | undefined): string {
-    if (!ev) return "transparent";
+  /* ======================== HELPERS ======================== */
+
+  function cellColor(ev?: TraceEvent): string {
+    if (!ev) return "#222";
     const dur = ev.extra?.duration_ms ?? 0;
-
-    // Failed overrides
-    if (ev.status === "FAILED" || ev.status === "ERROR") {
-      return "#8b1e3f"; // dark red
-    }
-
-    if (dur === 0) return "#222"; // unknown duration
-
-    if (dur >= criticalLimit) return "#e53935"; // very slow — red
-    if (dur >= slowLimit) return "#f9a825"; // slow — yellow
-    if (dur < slowLimit && dur > 0) return "#1b5e20"; // fast — green
-
-    return "#33691e";
+    if (ev.status === "FAILED" || ev.status === "ERROR") return "#8b1e3f";
+    if (dur >= criticalLimit) return "#e53935";
+    if (dur >= slowLimit) return "#f9a825";
+    if (dur > 0) return "#1b5e20";
+    return "#333";
   }
 
   function formatMs(ms?: number) {
-    if (!ms && ms !== 0) return "";
-    if (ms < 1000) return `${ms.toFixed(0)} ms`;
+    if (ms == null) return "";
+    if (ms < 1000) return `${ms} ms`;
     return `${(ms / 1000).toFixed(2)} s`;
   }
 
-  if (loading) {
-    return (
-      <div style={pageStyle}>
-        <h3>Loading Trace...</h3>
-      </div>
-    );
-  }
+  /* ======================== UI ======================== */
 
-  if (!data) {
-    return (
-      <div style={pageStyle}>
-        <h3>Failed to load trace data.</h3>
-      </div>
-    );
-  }
+  if (loading) return <div style={pageStyle}>Loading…</div>;
+  if (!data) return <div style={pageStyle}>Failed to load trace data.</div>;
 
   return (
     <div style={pageStyle}>
       <header style={headerStyle}>
         <div>
           <h1 style={{ margin: 0 }}>🧠 Cypher Trace Heatmap</h1>
-          <p style={{ margin: "4px 0", opacity: 0.75 }}>
-            Phase-4 · Multi-agent orchestration · Live execution traces
-          </p>
+          <small>Phase-4 · Agent orchestration · Execution observability</small>
         </div>
-        <button
-          onClick={load}
-          style={refreshButtonStyle}
-        >
-          ⟳ Refresh
-        </button>
+        <button onClick={load} style={refreshButtonStyle}>⟳ Refresh</button>
       </header>
 
-      {/* Controls row */}
+      {/* CONTROLS */}
       <div style={controlsRowStyle}>
-        <label style={controlItemStyle}>
-          <input
-            type="checkbox"
-            checked={live}
-            onChange={(e) => setLive(e.target.checked)}
-          />{" "}
-          Live
-        </label>
+        <label><input type="checkbox" checked={live} onChange={e => setLive(e.target.checked)} /> Live</label>
 
-        <label style={controlItemStyle}>
-          Trace ID
-          <input
-            style={controlInputStyle}
-            value={traceSearch}
-            onChange={(e) => setTraceSearch(e.target.value)}
-            placeholder="search trace id"
-          />
-        </label>
+        <input placeholder="Trace ID" value={traceSearch} onChange={e => setTraceSearch(e.target.value)} />
+        <input placeholder="Node" value={nodeFilter} onChange={e => setNodeFilter(e.target.value)} />
+        <input type="number" placeholder="Min ms" value={minMs} onChange={e => setMinMs(+e.target.value || 0)} />
+        <input type="number" placeholder="Slow ≥" value={slowLimit} onChange={e => setSlowLimit(+e.target.value)} />
+        <input type="number" placeholder="Critical ≥" value={criticalLimit} onChange={e => setCriticalLimit(+e.target.value)} />
 
-        <label style={controlItemStyle}>
-          Node
-          <input
-            style={controlInputStyle}
-            value={nodeFilter}
-            onChange={(e) => setNodeFilter(e.target.value)}
-            placeholder="entity / planner / chat..."
-          />
-        </label>
-
-        <label style={controlItemStyle}>
-          Min duration (ms)
-          <input
-            type="number"
-            style={controlInputStyle}
-            value={minMs}
-            onChange={(e) => setMinMs(Number(e.target.value) || 0)}
-          />
-        </label>
-
-        <label style={controlItemStyle}>
-          Slow ≥ (ms)
-          <input
-            type="number"
-            style={controlInputStyle}
-            value={slowLimit}
-            onChange={(e) => setSlowLimit(Number(e.target.value) || 0)}
-          />
-        </label>
-
-        <label style={controlItemStyle}>
-          Critical ≥ (ms)
-          <input
-            type="number"
-            style={controlInputStyle}
-            value={criticalLimit}
-            onChange={(e) => setCriticalLimit(Number(e.target.value) || 0)}
-          />
-        </label>
-
-        <label style={controlItemStyle}>
-          <input
-            type="checkbox"
-            checked={showFailedOnly}
-            onChange={(e) => setShowFailedOnly(e.target.checked)}
-          />{" "}
-          Failed only
-        </label>
+        <label><input type="checkbox" checked={showFailedOnly} onChange={e => setShowFailedOnly(e.target.checked)} /> Failed</label>
       </div>
 
-      {/* Top row: summary + slowest */}
-      <div style={topRowStyle}>
-        <section style={cardStyle}>
-          <h2>Summary</h2>
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-            <SummaryStat
-              label="Total events"
-              value={data.summary.total_events}
-            />
-            <SummaryStat
-              label="Nodes"
-              value={Object.keys(data.summary.per_node).length}
-            />
-            <SummaryStat label="Failures" value={data.summary.failures} />
-          </div>
-          <h4 style={{ marginTop: 16 }}>Events per node</h4>
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {Object.entries(data.summary.per_node).map(([node, count]) => (
-              <li key={node}>
-                <code>{node}</code>: {count}
-              </li>
-            ))}
-          </ul>
-        </section>
+      {/* SUMMARY */}
+      <section style={summaryRowStyle}>
+        <Card title="Summary">
+          <SummaryStat label="Events" value={data.summary.total_events} />
+          <SummaryStat label="Nodes" value={Object.keys(data.summary.per_node).length} />
+          <SummaryStat label="Failures" value={data.summary.failures} />
+        </Card>
 
-        <section style={cardStyle}>
-          <h2>Slowest Nodes</h2>
+        <Card title="Slowest Nodes">
           {slowestNodes.length === 0 ? (
-            <p style={{ opacity: 0.7 }}>No duration data yet.</p>
+            <small>No duration data yet.</small>
           ) : (
             <table style={tableStyle}>
               <thead>
-                <tr>
-                  <th>Node</th>
-                  <th>Total</th>
-                  <th>Calls</th>
-                  <th>Avg</th>
-                </tr>
+                <tr><th>Node</th><th>Total</th><th>Count</th><th>Avg</th></tr>
               </thead>
               <tbody>
-                {slowestNodes.map((s) => (
+                {slowestNodes.map(s => (
                   <tr key={s.node}>
-                    <td>
-                      <code>{s.node}</code>
-                    </td>
+                    <td><code>{s.node}</code></td>
                     <td>{formatMs(s.total_ms)}</td>
                     <td>{s.count}</td>
                     <td>{formatMs(s.avg)}</td>
@@ -317,228 +228,219 @@ export default function TraceInspectorApp() {
               </tbody>
             </table>
           )}
-        </section>
-      </div>
+        </Card>
+      </section>
 
-      {/* Heatmap + details */}
-      <div style={bottomRowStyle}>
-        <section style={{ ...cardStyle, flex: 2 }}>
-          <h2>Execution Heatmap</h2>
-          {visibleTraces.length === 0 ? (
-            <p style={{ opacity: 0.7 }}>No traces recorded yet.</p>
-          ) : (
-            <>
-              <div style={heatmapLegendStyle}>
-                <span>Fast</span>
-                <span
-                  style={{ background: "#1b5e20", width: 40, height: 10 }}
-                />
-                <span
-                  style={{ background: "#f9a825", width: 40, height: 10 }}
-                />
-                <span
-                  style={{ background: "#e53935", width: 40, height: 10 }}
-                />
-                <span>Slow</span>
-              </div>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ ...tableStyle, fontSize: 12, minWidth: 600 }}>
-                  <thead>
-                    <tr>
-                      <th>Trace</th>
-                      {nodes.map((n) => (
-                        <th key={n}>
-                          <code>{n}</code>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleTraces.map((t) => {
-                      const hasFail = t.events.some(
-                        (e) =>
-                          e.status === "FAILED" || e.status === "ERROR"
-                      );
-                      return (
-                        <tr
-                          key={t.id}
-                          onClick={() => setSelectedTraceId(t.id)}
+      {/* HEATMAP + DETAILS */}
+      <section style={bottomRowStyle}>
+        <Card title="Execution Heatmap" flex={2}>
+          <table style={heatmapTableStyle}>
+            <thead>
+              <tr>
+                <th>Trace</th>
+                {nodes.map(n => <th key={n}>{n}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {visibleTraces.map(t => (
+                <tr
+                  key={t.id}
+                  onClick={() => setSelectedTraceId(t.id)}
+                  style={{ background: selectedTrace?.id === t.id ? "#263043" : "transparent", cursor: "pointer" }}
+                >
+                  <td><code>{t.id.slice(0,8)}</code></td>
+                  {nodes.map(n => {
+                    const ev = t.events.find(e => e.node === n);
+                    return (
+                      <td key={n}>
+                        <div
+                          title={ev ? `${ev.node} | ${ev.status} | ${formatMs(ev.extra?.duration_ms)}` : ""}
                           style={{
-                            cursor: "pointer",
-                            backgroundColor:
-                              selectedTrace?.id === t.id
-                                ? "#252a39"
-                                : hasFail
-                                ? "#2b0e1a"
-                                : "transparent",
+                            height: 14,
+                            borderRadius: 4,
+                            background: cellColor(ev),
+                            border: "1px solid #333"
                           }}
-                        >
-                          <td>
-                            <code>{t.id.slice(0, 8)}</code>
-                          </td>
-                          {nodes.map((node) => {
-                            const ev = t.events.find((e) => e.node === node);
-                            const dur = ev?.extra?.duration_ms;
-                            return (
-                              <td key={node}>
-                                <div
-                                  title={
-                                    ev
-                                      ? `${node}\n${ev.status}\n${formatMs(
-                                          dur
-                                        )}\n${ev.message || ""}`
-                                      : `${node}\n(no event)`
-                                  }
-                                  style={{
-                                    width: "100%",
-                                    height: 18,
-                                    borderRadius: 4,
-                                    background: cellColor(ev),
-                                    border: "1px solid #333",
-                                  }}
-                                />
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </section>
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
 
-        <section style={{ ...cardStyle, flex: 1 }}>
-          <h2>Trace Details</h2>
-          {!selectedTrace ? (
-            <p style={{ opacity: 0.7 }}>Select a trace row to inspect it.</p>
-          ) : (
+        <Card title="Trace Details" flex={1}>
+          {!selectedTrace ? <small>Select a trace</small> : (
             <>
-              <p style={{ fontSize: 12, opacity: 0.8 }}>
-                <strong>Trace ID:</strong> <code>{selectedTrace.id}</code>
-              </p>
-              <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
-                {selectedTrace.events.map((e) => (
-                  <li key={`${e.node}-${e.timestamp}`}>
-                    <div>
-                      <code>{e.node}</code> — {e.status} —{" "}
-                      {formatMs(e.extra?.duration_ms)}
-                    </div>
-                    {e.message && (
-                      <div style={{ opacity: 0.75 }}>{e.message}</div>
-                    )}
+              <small><code>{selectedTrace.id}</code></small>
+              <ol>
+                {selectedTrace.events.map(e => (
+                  <li key={e.timestamp}>
+                    <strong>{e.node}</strong> — {e.status} — {formatMs(e.extra?.duration_ms)}
                   </li>
                 ))}
               </ol>
+
+              <hr />
+
+              <h3>Plan Inspector</h3>
+
+              {planLoading && <small>Loading plan…</small>}
+
+              {!planLoading && !plan?.chosen && <small>No plan available.</small>}
+
+              {plan?.chosen && (
+                <>
+                  <p>{plan.chosen.explanation}</p>
+
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {plan.chosen.confidence != null && (
+                      <Tag color="#16a34a">Confidence: {plan.chosen.confidence}</Tag>
+                    )}
+                    {plan.chosen.risk && (
+                      <Tag color={plan.chosen.risk === "high" ? "#dc2626" : "#22c55e"}>
+                        Risk: {plan.chosen.risk}
+                      </Tag>
+                    )}
+                  </div>
+
+                  {plan.chosen.score && (
+                    <pre style={jsonBox}>{JSON.stringify(plan.chosen.score, null, 2)}</pre>
+                  )}
+                </>
+              )}
+
+              {plan?.rejected?.length > 0 && (
+                <>
+                  <h4>Rejected Plans</h4>
+                  {plan.rejected.map((r: any, i: number) => (
+                    <div key={i} style={rejectedCard}>
+                      <p>{r.reason}</p>
+                      {r.score && <pre style={jsonBox}>{JSON.stringify(r.score, null, 2)}</pre>}
+                    </div>
+                  ))}
+                </>
+              )}
             </>
           )}
-        </section>
-      </div>
+        </Card>
+      </section>
     </div>
   );
 }
 
-// ----- small presentational helpers -----
+/* ======================== COMPONENTS ======================== */
+
+function Card({ title, children, flex = 1 }: any) {
+  return (
+    <section style={{ ...cardStyle, flex }}>
+      <h2>{title}</h2>
+      {children}
+    </section>
+  );
+}
 
 function SummaryStat({ label, value }: { label: string; value: number }) {
   return (
-    <div
-      style={{
-        padding: 10,
-        borderRadius: 8,
-        background: "#151827",
-        minWidth: 100,
-      }}
-    >
-      <div style={{ fontSize: 12, opacity: 0.7 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 600 }}>{value}</div>
+    <div style={summaryBox}>
+      <small>{label}</small>
+      <strong>{value}</strong>
     </div>
   );
 }
 
-const pageStyle: React.CSSProperties = {
-  minHeight: "100vh",
+function Tag({ children, color }: any) {
+  return (
+    <span style={{ background: color + "33", color, padding: "2px 6px", borderRadius: 6, fontSize: 11 }}>
+      {children}
+    </span>
+  );
+}
+
+/* ======================== STYLES ======================== */
+
+const pageStyle = {
   background: "#050712",
   color: "#e5e7eb",
-  padding: 20,
-  fontFamily:
-    "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  minHeight: "100vh",
+  padding: 16,
+  fontFamily: "system-ui"
 };
 
-const headerStyle: React.CSSProperties = {
+const headerStyle = {
   display: "flex",
-  alignItems: "center",
   justifyContent: "space-between",
-  marginBottom: 8,
+  marginBottom: 8
 };
 
 const controlsRowStyle: React.CSSProperties = {
   display: "flex",
-  flexWrap: "wrap",
+  gap: 8,
+  marginBottom: 10,
+  flexWrap: "wrap" as React.CSSProperties["flexWrap"]
+};
+
+
+const summaryRowStyle: React.CSSProperties = {
+  display: "flex",
   gap: 12,
-  alignItems: "center",
-  marginBottom: 16,
-};
-
-const controlItemStyle: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 4,
-  fontSize: 12,
-};
-
-const controlInputStyle: React.CSSProperties = {
-  padding: "4px 6px",
-  borderRadius: 6,
-  border: "1px solid #374151",
-  background: "#020617",
-  color: "#e5e7eb",
-  fontSize: 12,
-};
-
-const topRowStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 16,
-  flexWrap: "wrap",
 };
 
 const bottomRowStyle: React.CSSProperties = {
   display: "flex",
-  gap: 16,
-  marginTop: 16,
-  flexWrap: "wrap",
+  gap: 12,
+  marginTop: 12
+  
 };
 
 const cardStyle: React.CSSProperties = {
   background: "#0b0f1d",
-  borderRadius: 12,
-  padding: 16,
-  boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-  border: "1px solid #111827",
+  padding: 12,
+  borderRadius: 10,
+  border: "1px solid #111827"
+};
+
+const summaryBox: React.CSSProperties = {
+  background: "#151827",
+  padding: 10,
+  borderRadius: 8,
+  marginBottom: 6,
+};
+
+const refreshButtonStyle: React.CSSProperties = {
+  borderRadius: 20,
+  padding: "6px 12px",
+  border: "1px solid #4b5563",
+  background: "#111827",
+  color: "#e5e7eb",
+};
+
+const heatmapTableStyle: React.CSSProperties = {
+  width: "100%",
+  fontSize: 11,
+  borderCollapse: "collapse" as const
 };
 
 const tableStyle: React.CSSProperties = {
   width: "100%",
-  borderCollapse: "collapse",
+  fontSize: 12
 };
 
-const refreshButtonStyle: React.CSSProperties = {
-  padding: "6px 12px",
-  borderRadius: 999,
-  border: "1px solid #4b5563",
-  background: "#111827",
-  color: "#e5e7eb",
-  cursor: "pointer",
-  fontSize: 13,
-};
-
-const heatmapLegendStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
+const jsonBox: React.CSSProperties = {
+  background: "#020617",
+  padding: 8,
+  borderRadius: 6,
   fontSize: 11,
-  opacity: 0.8,
-  marginBottom: 8,
+  marginTop: 6,
+  overflow: "auto",
+  maxHeight: 180
+};
+
+const rejectedCard: React.CSSProperties = {
+  background: "#0f172a",
+  padding: 8,
+  marginTop: 6,
+  borderRadius: 8
 };
