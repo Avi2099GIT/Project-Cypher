@@ -131,31 +131,57 @@ def get_trace():
     }
 
 
+from cloud.api.assistant.orchestrator.tracer import tracer
+
 @router.get("/debug/plan")
 async def debug_plan(trace_id: str | None = None):
+    """
+    Inspect the planner V2 decision and the chosen execution plan
+    for a given trace. If trace_id is not provided, the latest trace
+    from the tracer timeline is used.
+    """
 
-    # Use latest trace if not provided
+    # 1) If no trace_id provided, pick the latest trace from the timeline
+    events = tracer.timeline()
+    if not events:
+        return {"error": "No trace data yet"}
+
     if not trace_id:
-        events = tracer.to_dict()
-        if not events:
-            return {"error": "No trace data yet"}
+        # Last event in time-ordered list → latest trace
         trace_id = events[-1]["trace_id"]
 
+    # 2) Look up the attached execution context
     ctx = tracer.get_context(trace_id)
-
-    if not ctx:
+    if ctx is None:
         return {"error": f"No context found for trace_id={trace_id}"}
 
-    plan = ctx.get("extras", {}).get("plan")
-    if not plan:
+    # ctx is an ExecutionContext, not a dict
+    extras = getattr(ctx, "extras", {}) or {}
+
+    # 3) Pull out the ExecutionPlan object and steps list
+    plan_obj = extras.get("execution_plan")
+    plan_steps = extras.get("plan") or []
+    plan_debug = extras.get("plan_debug") or {}
+
+    if plan_obj is None:
         return {"error": "No plan attached to this trace"}
+
+    # 4) Build a JSON-friendly payload
+    explanation = getattr(plan_obj, "explanation", None)
+    score = getattr(plan_obj, "score_breakdown", {})
+    rejected = getattr(plan_obj, "rejected", [])
 
     return {
         "trace_id": trace_id,
-        "chosen": plan.explanation,
-        "score": plan.score_breakdown,
-        "rejected": plan.rejected,
+        "plan": {
+            "explanation": explanation,
+            "score": score,
+            "steps": plan_steps,    # already a list[dict]
+            "rejected": rejected,   # list[ExecutionPlan] objects summary
+        },
+        "debug": plan_debug,
     }
+
 
 
 

@@ -5,10 +5,9 @@ from typing import Any, Dict, List, Optional
 import time
 import threading
 import logging
-from collections import defaultdict, Counter
-import datetime
 import uuid
-from .node import NodeStatus
+
+from .node import NodeStatus  # you already have this Enum in node.py
 
 logger = logging.getLogger(__name__)
 
@@ -40,29 +39,60 @@ class GraphTracer:
       - executor.py
       - failure_node.py
       - React Trace Inspector
+      - /debug/plan (via context attachment)
     """
 
     def __init__(self) -> None:
         self._events: List[GraphEvent] = []
         self._lock = threading.Lock()
-        self._contexts: dict[str, dict] = {}
+        # trace_id -> orchestration context (ctx dict)
+        self._contexts: Dict[str, Dict[str, Any]] = {}
+        self._current_trace_id: Optional[str] = None
+
+    # -------------------------
+    # TRACE ID MANAGEMENT
+    # -------------------------
 
     def new_trace(self) -> str:
         """
-        Create a new trace_id. The graph / router is responsible for
-        passing this ID through ExecutionContext so all nodes share it.
+        Create and remember a new trace id for the next run.
         """
-        return str(uuid.uuid4())
+        tid = str(uuid.uuid4())
+        with self._lock:
+            self._current_trace_id = tid
+        return tid
 
-    def attach_context(self, trace_id: str, ctx: dict) -> None:
+    @property
+    def current_trace_id(self) -> Optional[str]:
+        with self._lock:
+            return self._current_trace_id
+
+    # -------------------------
+    # CONTEXT ATTACHMENT
+    # -------------------------
+
+    def attach_context(self, trace_id: str, ctx: Dict[str, Any]) -> None:
+        """
+        Attach the *orchestration context* (the ctx dict you pass
+        through the graph) to a given trace_id so /debug/plan can inspect it.
+        """
         with self._lock:
             self._contexts[trace_id] = ctx
 
-
-    def get_context(self, trace_id: str):
+    def get_context(self, trace_id: str) -> Optional[Dict[str, Any]]:
         with self._lock:
             return self._contexts.get(trace_id)
 
+    def last_context(self) -> Optional[Dict[str, Any]]:
+        """
+        Convenience helper: get the context for the most recent trace
+        (by event order).
+        """
+        with self._lock:
+            if not self._events:
+                return None
+            last_id = self._events[-1].trace_id
+            return self._contexts.get(last_id)
 
     # -------------------------
     # RECORD EVENTS
@@ -73,10 +103,13 @@ class GraphTracer:
         *,
         trace_id: str,
         node: str,
-        status: NodeStatus,
+        status: NodeStatus | str,
         message: str = "",
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
+        """
+        Record a single node event.
+        """
         evt = GraphEvent(
             trace_id=trace_id,
             timestamp=time.time(),
@@ -89,9 +122,7 @@ class GraphTracer:
         with self._lock:
             self._events.append(evt)
 
-        logger.debug(
-            "TRACE %s | %s | %s", evt.node, evt.status, evt.message
-        )
+        logger.debug("TRACE %s | %s | %s", evt.node, evt.status, evt.message)
 
     # -------------------------
     # ACCESSORS
@@ -117,32 +148,56 @@ class GraphTracer:
             ]
 
     def clear(self) -> None:
+        """
+        Clear recorded events for a fresh run.
+
+        NOTE: we do NOT clear _contexts here so that /debug/plan
+        can still inspect previous runs if needed.
+        """
         with self._lock:
             self._events.clear()
-            self._contexts.clear() 
 
     # -------------------------
     # UI SUPPORT METHODS
     # -------------------------
 
-    def timeline(self):
-        """Events ordered by time (for UI replay)"""
+    def timeline(self) -> List[Dict[str, Any]]:
+        """Events ordered by time (for UI replay)."""
         return sorted(self.to_dict(), key=lambda e: e["timestamp"])
 
-    def slowest_nodes(self, top=5):
-        """Nodes with highest cumulative runtime"""
-        durations = {}
+    def slowest_nodes(self, top: int = 5) -> List[Dict[str, Any]]:
+        """
+        Aggregates total duration per node across all traces.
+        Used by the top-level /debug/trace slowest section.
+        """
+        durations: Dict[str, float] = {}
+        counts: Dict[str, int] = {}
 
-        for e in self._events:
-            if e.message == "success":
-                ms = e.extra.get("duration_ms", 0)
-                durations[e.node] = durations.get(e.node, 0) + ms
+        with self._lock:
+            for e in self._events:
+                ms = e.extra.get("duration_ms")
+                if ms is None:
+                    continue
+                try:
+                    ms_val = float(ms)
+                except Exception:
+                    continue
+                durations[e.node] = durations.get(e.node, 0.0) + ms_val
+                counts[e.node] = counts.get(e.node, 0) + 1
 
-        return sorted(
-            [{"node": k, "total_ms": v} for k, v in durations.items()],
-            key=lambda x: x["total_ms"],
-            reverse=True,
-        )[:top]
+        slow = []
+        for node, total in durations.items():
+            count = counts.get(node, 1)
+            slow.append(
+                {
+                    "node": node,
+                    "total_ms": total,
+                    "count": count,
+                    "avg": total / max(count, 1),
+                }
+            )
+
+        return sorted(slow, key=lambda x: x["total_ms"], reverse=True)[:top]
 
     def summary(self) -> Dict[str, Any]:
         with self._lock:
@@ -160,55 +215,87 @@ class GraphTracer:
                 "per_node": per_node,
                 "failures": failures,
             }
-        
-    def heatmap(self, bucket="minute"):
 
-        buckets = defaultdict(lambda: defaultdict(int))
+    # -------- extra helpers used by router endpoints --------
 
-        for e in self._events:
-            ts = datetime.datetime.fromtimestamp(e.timestamp)
-            key = ts.strftime("%Y-%m-%d %H:%M")  # per-minute buckets
-            buckets[key][e.node] += 1
+    def heatmap(self) -> Dict[str, Any]:
+        """
+        Structure events as trace → node grid. Good for raw debugging.
+        """
+        with self._lock:
+            events = list(self._events)
 
-        return [
-            {"bucket": k, "data": v}
-            for k, v in buckets.items()
-        ]
-    
-    def slow_nodes(self):
-        stats = defaultdict(lambda: {"total": 0, "count": 0})
-
-        for e in self._events:
-            d = e.extra.get("duration_ms")
-            if d:
-                stats[e.node]["total"] += d
-                stats[e.node]["count"] += 1
-
-        return [
-            {
-                "node": n,
-                "total_ms": v["total"],
-                "count": v["count"],
-                "avg": round(v["total"] / max(v["count"], 1), 2)
+        traces: Dict[str, Dict[str, Any]] = {}
+        for e in events:
+            t = traces.setdefault(e.trace_id, {})
+            t[e.node] = {
+                "status": e.status,
+                "message": e.message,
+                "duration_ms": e.extra.get("duration_ms"),
             }
-            for n, v in stats.items()
-        ]
-    
-    def failure_map(self):
-        c = Counter()
 
-        for e in self._events:
-            if e.status in ("FAILED", "ERROR"):
-                c[e.node] += 1
+        return {"traces": traces}
 
-        return dict(c)
-    
-    def trace_by_id(self, tid: str):
-        return [e for e in self._events if e.trace_id == tid]
+    def slow_nodes(self) -> List[Dict[str, Any]]:
+        """
+        Same as slowest_nodes but returns full list (for /debug/trace/slow).
+        """
+        with self._lock:
+            events = list(self._events)
 
+        durations: Dict[str, float] = {}
+        counts: Dict[str, int] = {}
 
+        for e in events:
+            ms = e.extra.get("duration_ms")
+            if ms is None:
+                continue
+            try:
+                ms_val = float(ms)
+            except Exception:
+                continue
+            durations[e.node] = durations.get(e.node, 0.0) + ms_val
+            counts[e.node] = counts.get(e.node, 0) + 1
 
+        nodes = []
+        for node, total in durations.items():
+            count = counts.get(node, 1)
+            nodes.append(
+                {
+                    "node": node,
+                    "total_ms": total,
+                    "count": count,
+                    "avg": total / max(count, 1),
+                }
+            )
 
+        return sorted(nodes, key=lambda x: x["total_ms"], reverse=True)
+
+    def failure_map(self) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Map of trace_id → list of failed node events.
+        """
+        with self._lock:
+            events = list(self._events)
+
+        out: Dict[str, List[Dict[str, Any]]] = {}
+        for e in events:
+            if e.status not in ("FAILED", "ERROR"):
+                continue
+            out.setdefault(e.trace_id, []).append(
+                {
+                    "node": e.node,
+                    "message": e.message,
+                    "extra": e.extra,
+                }
+            )
+        return out
+
+    def trace_by_id(self, trace_id: str) -> List[Dict[str, Any]]:
+        """
+        Return all events for a specific trace id.
+        """
+        return [e for e in self.to_dict() if e["trace_id"] == trace_id]
 
 
 # ---------------------------------------------------------

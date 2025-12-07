@@ -87,7 +87,7 @@ export default function TraceInspectorApp() {
     if (!selectedTraceId) return;
 
     setPlanLoading(true);
-    fetch("http://127.0.0.1:8000/v1/assistant/debug/plan")
+    fetch(`http://127.0.0.1:8000/v1/assistant/debug/plan?trace_id=${selectedTraceId}`)
       .then((res) => res.json())
       .then((json) => {
         setPlan(json);
@@ -234,6 +234,17 @@ export default function TraceInspectorApp() {
       {/* HEATMAP + DETAILS */}
       <section style={bottomRowStyle}>
         <Card title="Execution Heatmap" flex={2}>
+          {/* HEATMAP LEGEND */}
+          <div style={heatmapLegend}>
+            <LegendItem color="#1b5e20" label="Healthy" desc="Executed within normal time" />
+            <LegendItem color="#f9a825" label="Slow" desc={`>${slowLimit} ms`} />
+            <LegendItem color="#e53935" label="Critical" desc={`>${criticalLimit} ms`} />
+            <LegendItem color="#8b1e3f" label="Failed" desc="Execution error" />
+            <LegendItem color="#333" label="No Duration" desc="Completed but no timing info" />
+            <LegendItem color="#222" label="Skipped" desc="Node did not run" />
+          </div>
+
+
           <table style={heatmapTableStyle}>
             <thead>
               <tr>
@@ -289,40 +300,50 @@ export default function TraceInspectorApp() {
 
               {planLoading && <small>Loading plan…</small>}
 
-              {!planLoading && !plan?.chosen && <small>No plan available.</small>}
+              {!planLoading && !plan?.plan && <small>No plan available.</small>}
 
-              {plan?.chosen && (
+              {plan?.plan && (
                 <>
-                  <p>{plan.chosen.explanation}</p>
+                  <h4>Why this plan?</h4>
 
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {plan.chosen.confidence != null && (
-                      <Tag color="#16a34a">Confidence: {plan.chosen.confidence}</Tag>
-                    )}
-                    {plan.chosen.risk && (
-                      <Tag color={plan.chosen.risk === "high" ? "#dc2626" : "#22c55e"}>
-                        Risk: {plan.chosen.risk}
-                      </Tag>
-                    )}
-                  </div>
+                  <pre style={jsonBox}>
+                    {JSON.stringify(plan.plan.explanation, null, 2)}
+                  </pre>
 
-                  {plan.chosen.score && (
-                    <pre style={jsonBox}>{JSON.stringify(plan.chosen.score, null, 2)}</pre>
+                  <h4>Score Breakdown</h4>
+
+                  <pre style={jsonBox}>
+                    {JSON.stringify(plan.plan.score, null, 2)}
+                  </pre>
+
+                  <h4>Execution Steps</h4>
+
+                  <ol>
+                    {plan.plan.steps.map((s: any, i: number) => (
+                      <li key={i}>
+                        <code>{s.tool}</code> — {JSON.stringify(s.args)}
+                      </li>
+                    ))}
+                  </ol>
+
+                  {plan.plan.rejected?.length > 0 && (
+                    <>
+                      <h4>Rejected Plans</h4>
+                      {plan.plan.rejected.map((r: any, i: number) => (
+                        <pre key={i} style={jsonBox}>{JSON.stringify(r, null, 2)}</pre>
+                      ))}
+                    </>
+                  )}
+
+                  {plan.debug && (
+                    <>
+                      <h4>Ranked Candidates</h4>
+                      <pre style={jsonBox}>{JSON.stringify(plan.debug, null, 2)}</pre>
+                    </>
                   )}
                 </>
               )}
 
-              {plan?.rejected?.length > 0 && (
-                <>
-                  <h4>Rejected Plans</h4>
-                  {plan.rejected.map((r: any, i: number) => (
-                    <div key={i} style={rejectedCard}>
-                      <p>{r.reason}</p>
-                      {r.score && <pre style={jsonBox}>{JSON.stringify(r.score, null, 2)}</pre>}
-                    </div>
-                  ))}
-                </>
-              )}
             </>
           )}
         </Card>
@@ -359,6 +380,24 @@ function Tag({ children, color }: any) {
   );
 }
 
+function LegendItem({ color, label, desc }: any) {
+            return (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11 }}>
+                <div style={{
+                  width: 14,
+                  height: 14,
+                  background: color,
+                  borderRadius: 4,
+                  border: "1px solid #444"
+                }} />
+                <div>
+                  <strong>{label}</strong>
+                  <div style={{ opacity: 0.7 }}>{desc}</div>
+                </div>
+              </div>
+            );
+            }
+
 /* ======================== STYLES ======================== */
 
 const pageStyle = {
@@ -374,6 +413,14 @@ const headerStyle = {
   justifyContent: "space-between",
   marginBottom: 8
 };
+
+const heatmapLegend: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 12,
+  marginBottom: 10
+};
+
 
 const controlsRowStyle: React.CSSProperties = {
   display: "flex",

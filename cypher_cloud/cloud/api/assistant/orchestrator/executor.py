@@ -55,4 +55,13 @@ class GraphExecutor:
             self.graph.name,
         )
 
+        # ✅ Attach full execution context to tracer so /debug/plan can find it
+        try:
+            tracer.attach_context(ctx.trace_id, ctx)
+        except Exception:
+            logger.exception(
+                "GraphExecutor: failed to attach context for trace_id=%s",
+                ctx.trace_id,
+            )
+
         return ctx, tracer
