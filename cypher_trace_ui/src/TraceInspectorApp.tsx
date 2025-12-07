@@ -158,19 +158,42 @@ export default function TraceInspectorApp() {
 
   function cellColor(ev?: TraceEvent): string {
     if (!ev) return "#222";
-    const dur = ev.extra?.duration_ms ?? 0;
+    const dur = extractDuration(ev) ?? 0;
     if (ev.status === "FAILED" || ev.status === "ERROR") return "#8b1e3f";
     if (dur >= criticalLimit) return "#e53935";
     if (dur >= slowLimit) return "#f9a825";
-    if (dur > 0) return "#1b5e20";
+    if (dur !== null) return "#1b5e20";
     return "#333";
   }
 
   function formatMs(ms?: number) {
     if (ms == null) return "";
-    if (ms < 1000) return `${ms} ms`;
+
+    if (ms < 1000) return `${ms.toFixed(1)} ms`;
     return `${(ms / 1000).toFixed(2)} s`;
   }
+
+
+  function extractDuration(ev?: TraceEvent): number | null {
+    if (!ev) return null;
+
+    // Prefer structured duration
+    if (typeof ev.extra?.duration_ms === "number") {
+      return ev.extra.duration_ms;
+    }
+
+    // Try parsing from message: "... — 979.95 ms" or "... — 1.12 s"
+    if (typeof ev.message === "string") {
+      const m = ev.message.match(/([\d.]+)\s*(ms|s)/i);
+      if (m) {
+        const val = parseFloat(m[1]);
+        return m[2].toLowerCase() === "s" ? val * 1000 : val;
+      }
+    }
+
+    return null;
+  }
+
 
   /* ======================== UI ======================== */
 
@@ -265,7 +288,7 @@ export default function TraceInspectorApp() {
                     return (
                       <td key={n}>
                         <div
-                          title={ev ? `${ev.node} | ${ev.status} | ${formatMs(ev.extra?.duration_ms)}` : ""}
+                          title={ev ? `${ev.node} | ${ev.status} | ${formatMs(extractDuration(ev) ?? undefined)}` : ""}
                           style={{
                             height: 14,
                             borderRadius: 4,
@@ -289,7 +312,7 @@ export default function TraceInspectorApp() {
               <ol>
                 {selectedTrace.events.map(e => (
                   <li key={e.timestamp}>
-                    <strong>{e.node}</strong> — {e.status} — {formatMs(e.extra?.duration_ms)}
+                    <strong>{e.node}</strong> — {e.status} — {formatMs(extractDuration(e) ?? undefined)}
                   </li>
                 ))}
               </ol>
