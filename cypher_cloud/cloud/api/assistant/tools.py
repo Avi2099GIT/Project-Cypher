@@ -232,7 +232,12 @@ async def weather_tool(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]
         "temperature": current.get("temperature_2m"),
         "apparent_temperature": current.get("apparent_temperature"),
         "humidity": current.get("relative_humidity_2m"),
-        "wind_speed": current.get("wind_speed_10m"),
+        "wind_speed_mps": current.get("wind_speed_10m"),
+        "wind_speed_kmph": (
+            round(float(current.get("wind_speed_10m")) * 3.6, 1)
+            if current.get("wind_speed_10m") is not None else None
+        ),
+
         "weather_code": current.get("weather_code"),
 
         # Observation timestamp (NOT guaranteed to be 'now')
@@ -572,46 +577,7 @@ async def notes_tool(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
 # --------------------------------------------------------------------
 
 
-async def tasks_tool(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
-    """
-    Manage a simple per-device todo list.
 
-    Args:
-        action: "add" | "list" | "complete" | "clear"
-        text: task text (for add)
-        id: task id (for complete)
-    """
-    action = (args.get("action") or "add").lower()
-    device = ctx.get("device") or {"device_id": "local-dev"}
-
-    if action == "add":
-        text = (args.get("text") or "").strip()
-        if not text:
-            return {"status": "error", "message": "No task text provided."}
-        task = memory_service.add_task(device, text)
-        return {"status": "ok", "task": task}
-
-    elif action == "list":
-        tasks = memory_service.list_tasks(device)
-        return {"status": "ok", "tasks": tasks}
-
-    elif action == "complete":
-        try:
-            task_id = int(args.get("id"))
-        except Exception:
-            return {"status": "error", "message": "Invalid or missing task id."}
-        ok = memory_service.complete_task(device, task_id)
-        if not ok:
-            return {"status": "error", "message": f"No task found with id {task_id}."}
-        tasks = memory_service.list_tasks(device)
-        return {"status": "ok", "tasks": tasks}
-
-    elif action == "clear":
-        memory_service.clear_tasks(device)
-        return {"status": "ok", "message": "All tasks cleared."}
-
-    else:
-        return {"status": "error", "message": f"Unknown tasks action: {action}"}
 
 
 # --------------------------------------------------------------------

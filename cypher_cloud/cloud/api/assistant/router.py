@@ -1,22 +1,31 @@
-# cloud/api/assistant/router.py
 from __future__ import annotations
 
 from typing import Dict, Any, List
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-
+from cloud.api.assistant.agents_dir.reasoning_agent import ReasoningAgent
 from .agents_dir.brain import CypherBrain
 from .memory import memory_service
-
+from .trace_router import router as trace_router
 router = APIRouter(prefix="/v1/assistant", tags=["Assistant"])
 
-# Create one shared Cypher brain instance (correct)
+# Create one shared Cypher brain instance
 brain = CypherBrain()
 
+from cloud.api.assistant.orchestrator.tracer import tracer
+
+
+@router.get("/debug/trace")
+async def get_trace():
+    return {
+        "events": tracer.to_dict(),
+        "summary": tracer.summary()
+    }
 
 # -------------------------------------------------------------------
 # Request / Response models
 # -------------------------------------------------------------------
+
 
 class AssistantQuery(BaseModel):
     message: str
@@ -32,38 +41,114 @@ class AssistantResponse(BaseModel):
 # MAIN ENDPOINT (MULTI-AGENT PIPELINE)
 # -------------------------------------------------------------------
 
+router.include_router(trace_router)
 @router.post("/query", response_model=AssistantResponse)
 async def assistant_query(payload: AssistantQuery):
 
-    # Identify device (later replace with auth / device registry)
+    # Identify device (placeholder until auth/device registry is added)
     device: Dict[str, Any] = {"device_id": "local-dev"}
 
-    # Retrieve short-term memory history
-    history: List[Dict[str, Any]] = memory_service.get_short_term_history(device)
+    # Retrieve episodic memory (short-term context)
+    history: List[Dict[str, Any]] = memory_service.get_recent_episodes(
+        device=device,
+        limit=10,
+    )
 
-    # Shared context for all agents
+    if not history:
+        history = []
+
+    # Shared context for Cypher brain
     ctx: Dict[str, Any] = {
         "device": device,
         "history": history,
         "message": payload.message,
     }
 
-    # 🔹 Run Multi-Agent Brain
+    # --------------------------------------------------------
+    # Run Cypher Core Brain
+    # --------------------------------------------------------
     reply_text, tools_used = await brain.process(payload.message, ctx)
 
-    # 🔹 Store conversation turn in memory engine
-    await memory_service.record_interaction(
-        device=device,
-        user_message=payload.message,
-        reply_text=str(reply_text),
-        tools_used=tools_used,
-    )
+    # --------------------------------------------------------
+    # Store memory episodes (Memory V2)
+    # --------------------------------------------------------
+    # try:
+    #     memory_service.store_episode(
+    #         device=device,
+    #         role="user",
+    #         content=payload.message,
+    #         meta={"source": "api"},
+    #     )
 
-    # 🔹 Snapshot memory (for UI / debug / Streamlit)
-    memory_view = memory_service.get_memory_view(device)
+    #     memory_service.store_episode(
+    #         device=device,
+    #         role="assistant",
+    #         content=reply_text,
+    #         meta={"source": "api"},
+    #     )
+
+    # except Exception:
+    #     # Memory must never crash the API
+    #     import logging
+    #     logging.exception("Failed to store memory episode")   
+
+    # --------------------------------------------------------
+    # Snapshot memory (for UI / debug tools)
+    # --------------------------------------------------------
+    try:
+        memory_view = {
+            "recent_episodes": ReasoningAgent()._filter_memory_episodes(
+                {"recent_episodes": memory_service.get_recent_episodes(device, limit=10)}
+            )
+        }
+
+    except Exception:
+        memory_view = {}
 
     return AssistantResponse(
         reply_text=str(reply_text),
         tools_used=tools_used,
         memory_used=memory_view,
     )
+
+
+from cloud.api.assistant.orchestrator.tracer import tracer
+
+@router.get("/v1/assistant/debug/trace")
+def get_trace():
+    return {
+        "events": tracer.timeline(),
+        "summary": tracer.summary(),
+        "slowest": tracer.slowest_nodes(),
+    }
+
+@router.get("/debug/plan")
+async def debug_plan():
+    ctx = memory_service.last_context()
+    plan = ctx.extras.get("plan")
+
+    if not plan:
+        return {"error": "No plan executed yet"}
+
+    return {
+        "chosen": plan.explanation,
+        "score": plan.score_breakdown,
+        "rejected": plan.rejected,
+    }
+
+
+@router.get("/debug/trace/heatmap")
+def trace_heatmap():
+    return tracer.heatmap()
+
+@router.get("/debug/trace/slow")
+def trace_slow():
+    return tracer.slow_nodes()
+
+@router.get("/debug/trace/failures")
+def trace_failures():
+    return tracer.failure_map()
+
+@router.get("/debug/trace/{trace_id}")
+def trace_each(trace_id: str):
+    return tracer.trace_by_id(trace_id)

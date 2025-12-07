@@ -1,145 +1,127 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 import logging
 
-from cloud.api.assistant.agents import chat_agent
-from .intent_agent import IntentAgent
-from .entity_agent import EntityAgent
-from .safety_agent import SafetyAgent
-from .planner_agent import PlannerAgentH
-from .executor_agent import ExecutorAgent
-from .verifier_agent import VerifierAgent
+from cloud.api.assistant.orchestrator.executor import GraphExecutor
+from cloud.api.assistant.orchestrator.cypher_graph import build_cypher_graph
+from cloud.api.assistant.memory import memory_service  # <-- NEW
 
 logger = logging.getLogger(__name__)
 
 
 class CypherBrain:
     """
-    High-level multi-agent brain for Cypher.
+    Cypher Phase-4 Brain (Graph Orchestrated + Memory V2)
 
-    Pipeline:
-      1) IntentAgent      → break message into intents
-      2) EntityAgent      → resolve entities & parameters
-      3) SafetyAgent      → filter / block dangerous intents
-      4) PlannerAgentH    → map intents → tool steps
-      5) ExecutorAgent    → run tools (time, weather, OS, calendar, etc.)
-      6) VerifierAgent    → inspect results
-      7) ChatAgent        → generate final reply
+    Orchestration:
+        intent → entity → safety → reasoning → arbiter
+        → planner → executor → verifier → chat
+
+    Memory:
+      - Each call to `process`:
+          * Stores the user message as an episode
+          * Stores the final assistant reply as an episode
+          * Attaches lightweight metadata (tools, decision, verification)
     """
 
     def __init__(self) -> None:
-        self.intent_agent = IntentAgent()
-        self.entity_agent = EntityAgent()
-        self.safety_agent = SafetyAgent()
-        self.planner = PlannerAgentH()
-        self.executor = ExecutorAgent()
-        self.verifier = VerifierAgent()
+        # Build Cypher execution graph
+        self.graph = build_cypher_graph()
+        self.executor = GraphExecutor(self.graph)
+
+        logger.info("CypherBrain initialized with graph: %s", self.graph.name)
 
     async def process(
         self,
         message: str,
         ctx: Dict[str, Any],
-    ) -> tuple[str, List[Dict[str, Any]]]:
+    ) -> Tuple[str, List[Dict[str, Any]]]:
+        """
+        Execute the full Cypher graph for a user message.
+
+        Returns:
+            (final_reply, tools_meta)
+        """
+
         device = ctx.get("device") or {"device_id": "local-dev"}
         history: List[Dict[str, Any]] = ctx.get("history") or []
 
-        # 1) Intents
-        intents = await self.intent_agent.parse(message, history)
-
-        # Pure chat
-        if len(intents) == 1 and intents[0].get("type") == "chat":
-            reply = await chat_agent.run(
-                message=message,
-                history=history,
-                device=device,
-                tools_used=None,
-            )
-            return reply, []
-
-        # 2) Entities
-        enriched = self.entity_agent.enrich(intents, message, ctx)
-
-        # 3) Safety
-        safe_intents, blocked = self.safety_agent.filter(enriched)
-        if not safe_intents:
-            details = ", ".join(i.get("reason", "blocked") for i in blocked) or "unsafe action"
-            reply = (
-                "I’ve blocked this request for safety reasons "
-                f"({details}). I can help with other tasks instead."
-            )
-            return reply, []
-
-        # 4) Plan tool calls
-        steps = self.planner.plan(safe_intents)
-        if not steps:
-            reply = await chat_agent.run(
-                message=message,
-                history=history,
-                device=device,
-                tools_used=None,
-            )
-            return reply, []
-
-        # 5) Execute tools
-        exec_ctx = dict(ctx)
-        exec_ctx["message"] = message
-        tools_meta = await self.executor.run(steps, exec_ctx)
-
-        # 6) Verification
-        verification = self.verifier.analyse(tools_meta)
-
-        # 7) Build a compact tool summary for ChatAgent
-        tool_summary_lines: List[str] = []
-        for t in tools_meta:
-            name = t.get("tool")
-            result = t.get("result")
-            if "error" in t:
-                tool_summary_lines.append(f"{name}: ERROR → {t['error']}")
-                continue
-
-            # Special case: calendar list
-            if name == "calendar_google" and isinstance(result, dict):
-                if result.get("mode") == "list" and result.get("status") == "ok":
-                    events = result.get("events") or []
-                    if not events:
-                        tool_summary_lines.append("calendar_google: no upcoming events.")
-                    else:
-                        lines = []
-                        for ev in events[:5]:
-                            title = ev.get("title") or "Untitled"
-                            start = ev.get("start") or "unknown time"
-                            lines.append(f"{start} — {title}")
-                        tool_summary_lines.append(
-                            "calendar_google: upcoming events:\n" + "\n".join(lines)
-                        )
-                    continue
-
-            # Generic preview
-            preview = str(result)[:400]
-            tool_summary_lines.append(f"{name}: {preview}")
-
-        tools_block = (
-            "\n\n[Tool results]\n" + "\n".join(tool_summary_lines)
-            if tool_summary_lines
-            else ""
+        logger.info(
+            "CypherBrain processing message trace graph=%s device=%s",
+            self.graph.name,
+            device.get("device_id") or device.get("id") or "unknown",
         )
 
-        augmented_message = message + tools_block
-
-        reply = await chat_agent.run(
-            message=augmented_message,
+        # Execute orchestration graph
+        graph_ctx, tracer = await self.executor.run_query(
+            message=message,
             history=history,
             device=device,
-            tools_used=tools_meta,
+            extras=ctx,
         )
 
-        if not verification["ok"]:
-            failed_names = ", ".join(verification["failed_tools"])
-            reply = (
-                reply.strip()
-                + f"\n\n(Note: some tools failed internally: {failed_names}. "
-                  "I still returned what I could.)"
+        # Extract core artifacts from graph context
+        final = graph_ctx.extras.get("final_reply")
+        tools_meta = graph_ctx.extras.get("tool_result") or []
+        decision = graph_ctx.extras.get("decision") or {}
+        reasoning = graph_ctx.extras.get("reasoning") or {}
+        verification = graph_ctx.extras.get("verification") or {}
+
+        if not final:
+            logger.error("No final_reply produced by graph. Trace=%s", graph_ctx.trace_id)
+            final = "Something went wrong internally, but I am still running."
+
+        # -------------------------------
+        # EPISODIC MEMORY: store turn
+        # -------------------------------
+        try:
+            # User episode
+            memory_service.store_episode(
+                device=device,
+                role="user",
+                content=message,
+                meta={
+                    "trace_id": graph_ctx.trace_id,
+                    "tools_planned": bool(graph_ctx.extras.get("plan")),
+                    "decision": decision,
+                    "reasoning": reasoning,
+                },
             )
 
-        return reply, tools_meta
+            # Assistant episode
+            # Assistant episode
+            suppress_for_reasoning = False
+
+            # If any OS-control tool ran in this turn, mark this episode as
+            # something we should not treat as long-term “truth” for reasoning.
+            for t in tools_meta:
+                name = (t.get("tool") or "").lower()
+                if name == "os_control":
+                    suppress_for_reasoning = True
+                    break
+
+            memory_service.store_episode(
+                device=device,
+                role="assistant",
+                content=final,
+                meta={
+                    "trace_id": graph_ctx.trace_id,
+                    "tools_used": tools_meta,
+                    "verification": verification,
+                    "suppress_for_reasoning": suppress_for_reasoning,
+                },
+            )
+
+        except Exception:
+            # Memory failures must never break the main flow
+            logger.exception("Failed to store episodic memory for trace_id=%s", graph_ctx.trace_id)
+
+        # Debug trace visibility (can be wired to dashboards later)
+        logger.debug(
+            "Execution trace %s → %s",
+            graph_ctx.trace_id,
+            tracer.to_dict(),
+        )
+
+        return final, tools_meta

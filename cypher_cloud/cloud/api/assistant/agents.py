@@ -109,7 +109,7 @@ class ChatAgent:
             lines: List[str] = []
             for t in tools_used:
                 name = t.get("tool", "unknown-tool")
-                result_preview = str(t.get("result"))[:200]
+                result_preview = json.dumps(t.get("result"), ensure_ascii=False, indent=2)
                 lines.append(f"- {name}: {result_preview}")
             tool_block = "\n\nRecent tool results:\n" + "\n".join(lines)
 
@@ -133,6 +133,9 @@ class ChatAgent:
         "DO NOT shorten URLs.\n"
         "DO NOT generate Google links yourself.\n"
         "If a URL is present in tool results, you MUST display THAT URL."
+        "Never assume that the user's computer is currently locked just because of old "
+        "messages. If the user says it is unlocked, you must proceed normally and you "
+        "should not keep asking them to unlock it.\n"
         )
 
 

@@ -46,6 +46,8 @@ class EntityAgent:
                     params.setdefault("action", "list")
                 elif "clear" in lower or "delete all notes" in lower:
                     params.setdefault("action", "clear")
+
+                    
                 else:
                     params.setdefault("action", "add")
                     params.setdefault(
@@ -59,7 +61,17 @@ class EntityAgent:
             # -------- TASKS -----------------
             elif itype == "tasks":
                 # LIST
-                if any(p in lower for p in ["list my tasks", "show my tasks","clear my task","delete my task","add a task","update my task"]):
+                if any(
+                    p in lower
+                    for p in [
+                        "list my tasks",
+                        "show my tasks",
+                        "clear my task",
+                        "delete my task",
+                        "add a task",
+                        "update my task",
+                    ]
+                ):
                     params["action"] = "list"
 
                 # CLEAR
@@ -79,19 +91,20 @@ class EntityAgent:
                 else:
                     params["action"] = "add"
                     params["text"] = self._extract_after_keywords(
-                        message,
-                        ["task", "todo", "add task", "remind me to"]
+                        message, ["task", "todo", "add task", "remind me to"]
                     )
 
                 # IMPORTANT SWITCH
                 intent["type"] = "google_tasks"
 
-
             # -------- CALENDAR (Google) -----
             elif itype == "calendar":
+                # Phrases that should almost always mean "show/list"
                 list_triggers = [
                     "show my calendar",
+                    "show me my calendar",
                     "show calendar",
+                    "show me calendar",
                     "list my events",
                     "list calendar events",
                     "what's on my calendar",
@@ -100,18 +113,30 @@ class EntityAgent:
                     "upcoming calendar events",
                     "show my upcoming events",
                     "show my upcoming calendar events",
-                    "clear my task",
-                    "delete my task",
-                    "update my task",
-                    "update event",
-                    "reschedule event"
+                    "calendar for this week",
+                    "my calendar for this week",
+                    "calendar for today",
+                    "calendar for tomorrow",
+                    "show me my calendar for this week",
                 ]
-                if any(p in lower for p in list_triggers):
+
+                is_list = any(p in lower for p in list_triggers)
+
+                # Generic heuristic: "show" + "calendar" or "calendar" + relative range
+                has_create_verb = any(
+                    v in lower for v in ["schedule", "create", "add", "book", "set up"]
+                )
+                if (
+                    ("show" in lower and "calendar" in lower)
+                    or ("calendar" in lower and any(p in lower for p in ["this week", "today", "tomorrow"]))
+                ) and not has_create_verb:
+                    is_list = True
+
+                if is_list:
                     params.setdefault("action", "list")
 
                 elif "clear calendar" in lower or "delete all events" in lower:
-                    # This will use the local in-memory calendar; Google clear-all
-                    # is dangerous so we keep it local-only for now.
+                    # Dangerous, keep as a special case (we still don't use Google clear-all)
                     params.setdefault("action", "clear")
 
                 elif "delete" in lower or "cancel" in lower:
@@ -136,9 +161,6 @@ class EntityAgent:
                     else:
                         params.setdefault("when", message)
                     params.setdefault("raw_message", message)
-                
-                
-
 
             # -------- OS CONTROL -----------
             elif itype == "os_control":

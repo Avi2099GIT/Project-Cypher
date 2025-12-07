@@ -6,7 +6,7 @@ import logging
 
 from cloud.api.assistant.tools_registry import tool_registry
 from cloud.api.assistant.tools_base import ToolContext
-
+from cloud.api.assistant.orchestrator.tracer import tracer
 logger = logging.getLogger(__name__)
 
 
@@ -17,6 +17,7 @@ class ExecutorAgent:
         steps: List[Dict[str, Any]],
         ctx: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
+        tracer.clear()
         device = ctx.get("device") or {"device_id": "local-dev"}
         history = ctx.get("history") or []
         message = ctx.get("message") or ""

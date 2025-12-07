@@ -4,6 +4,17 @@ from __future__ import annotations
 from typing import Dict, Any, List, Optional
 from .tools_google_calendar import calendar_google_tool
 from .tools_base import RegisteredTool, ToolContext
+# from .tools import (
+#     time_tool,
+#     system_info_tool,
+#     weather_tool,
+#     web_search_tool,
+#     os_list_dir_tool,
+#     os_control_tool,
+#     notes_tool,
+#     tasks_tool,
+#     calendar_tool,
+# )
 from .tools import (
     time_tool,
     system_info_tool,
@@ -11,9 +22,7 @@ from .tools import (
     web_search_tool,
     os_list_dir_tool,
     os_control_tool,
-    notes_tool,
-    tasks_tool,
-    calendar_tool,
+    notes_tool
 )
 from cloud.api.assistant.tools_google_tasks import google_tasks_tool
 

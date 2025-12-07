@@ -1,15 +1,18 @@
-# cloud/api/assistant/tools_google_calendar.py
 from __future__ import annotations
 
-from typing import Dict, Any
-from datetime import datetime, timedelta, timezone, time
+from typing import Dict, Any, Tuple, List
+from datetime import datetime, timedelta, timezone, date as dt_date, time as dt_time
 import re
 
-from googleapiclient.discovery import build
 from dateutil import parser as date_parser
+from googleapiclient.discovery import build
 
 from cloud.api.assistant.google_auth import get_google_creds
 
+
+# -------------------------------------------------------------------
+# SERVICE FACTORY
+# -------------------------------------------------------------------
 
 def _get_calendar_service():
     """Build a Google Calendar API service using stored / refreshed user creds."""
@@ -17,14 +20,14 @@ def _get_calendar_service():
     return build("calendar", "v3", credentials=creds)
 
 
-# ---------------------------------------------------
-# TIME PARSING HELPERS
-# ---------------------------------------------------
+# -------------------------------------------------------------------
+# DATE / TIME HELPERS
+# -------------------------------------------------------------------
 
 _MONTH_PATTERN = re.compile(
     r"\b("
     r"jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|"
-    r"january|february|march|april|june|july|august|september|october|november|december"
+    r"january|february|march|april|may|june|july|august|september|october|november|december"
     r")\b",
     re.IGNORECASE,
 )
@@ -44,51 +47,133 @@ def _has_explicit_date(text: str) -> bool:
     return False
 
 
-def _parse_time_only(text: str, base_date: datetime.date) -> datetime:
+def _local_tz():
+    now = datetime.now()
+    return now.astimezone().tzinfo or timezone.utc
+
+
+# -------------------------------------------------------------------
+# RANGE RESOLUTION
+# -------------------------------------------------------------------
+
+def _resolve_range_from_mode(mode: str) -> Tuple[datetime, datetime]:
     """
-    Parse only the time-of-day from text and combine with base_date.
-    Never inherits current minutes when user says only '9pm' / '11 am'.
+    Convert canonical range_mode into [start, end) UTC datetimes.
     """
-    text = text.strip()
-    if not text:
-        # default to 09:00 if only date is specified
-        t = time(hour=9, minute=0)
-    else:
-        dt = date_parser.parse(text, fuzzy=True, default=datetime(2000, 1, 1))
-        t = dt.time()
+    now_utc = datetime.now(timezone.utc)
+    start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    lower = text.lower()
-    if (("am" in lower or "pm" in lower) and ":" not in lower):
-        # e.g. "9pm" -> 21:00, not 21:10 or whatever current minute is
-        t = t.replace(minute=0, second=0, microsecond=0)
+    mode = (mode or "").lower().strip()
 
-    return datetime.combine(base_date, t)
+    if mode == "today":
+        return start, start + timedelta(days=1)
+
+    if mode == "tomorrow":
+        s = start + timedelta(days=1)
+        return s, s + timedelta(days=1)
+
+    if mode == "yesterday":
+        s = start - timedelta(days=1)
+        return s, start
+
+    if mode == "today_tomorrow":
+        return start, start + timedelta(days=2)
+
+    if mode == "this_week":
+        # current day + next 7 days
+        return start, start + timedelta(days=7)
+
+    if mode == "this_month":
+        # very rough month window
+        return start, start + timedelta(days=30)
+
+    # Fallback = next 7 days
+    return now_utc, now_utc + timedelta(days=7)
 
 
-def _parse_human_time(when_str: str) -> str | None:
+def _resolve_range_from_text(text: str) -> Tuple[datetime, datetime]:
     """
-    FIXED VERSION:
+    Interpret natural language ranges when range_mode is not provided.
 
-    - If phrase contains an explicit calendar date (Dec 3, 2025, 03/12/2025, etc):
-        → let dateutil parse the full phrase as-is.
-    - Else if it contains relative words (tomorrow/today/tonight):
-        → set the date manually and only parse the time part.
-    - Else:
-        → treat as a time-only phrase for today.
-
-    All outputs are ISO 8601 in UTC.
+    Supports:
+      - today / tomorrow / yesterday
+      - this week / this month
+      - phrases with explicit date → that single day
+      - fallback: [now, now+7 days]
     """
-    when_str = (when_str or "").strip()
+    text = (text or "").lower()
+    now_utc = datetime.now(timezone.utc)
+    start_today = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Relative keywords
+    if "today and tomorrow" in text or "today & tomorrow" in text:
+        return start_today, start_today + timedelta(days=2)
+    if "today" in text and "tomorrow" in text:
+        return start_today, start_today + timedelta(days=2)
+    if "today" in text:
+        return start_today, start_today + timedelta(days=1)
+    if "tomorrow" in text:
+        s = start_today + timedelta(days=1)
+        return s, s + timedelta(days=1)
+    if "yesterday" in text:
+        s = start_today - timedelta(days=1)
+        return s, start_today
+    if "this week" in text:
+        return start_today, start_today + timedelta(days=7)
+    if "this month" in text:
+        return start_today, start_today + timedelta(days=30)
+
+    # Explicit calendar date → that day
+    if _has_explicit_date(text):
+        try:
+            dt = date_parser.parse(text, fuzzy=True)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=_local_tz())
+            dt_utc = dt.astimezone(timezone.utc)
+            day_start = dt_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+            return day_start, day_start + timedelta(days=1)
+        except Exception:
+            pass
+
+    # Final fallback → next 7 days
+    return now_utc, now_utc + timedelta(days=7)
+
+
+def _resolve_range(args: Dict[str, Any]) -> Tuple[datetime, datetime]:
+    """
+    Prefer explicit range_mode from EntityAgent; otherwise infer from raw_message/when.
+    """
+    range_mode = (args.get("range_mode") or "").lower().strip()
+    raw = str(args.get("raw_message") or "") or str(args.get("when") or "")
+
+    if range_mode:
+        return _resolve_range_from_mode(range_mode)
+
+    return _resolve_range_from_text(raw)
+
+
+# -------------------------------------------------------------------
+# EVENT TIME PARSING (for CREATE / UPDATE)
+# -------------------------------------------------------------------
+
+def _parse_event_time(args: Dict[str, Any]) -> datetime | None:
+    """
+    Parse a single event datetime from args['when'] or args['raw_message'].
+
+    Supports:
+      - 'today at 7pm', 'tomorrow 10:30 am'
+      - 'on 5th December 2025 at 7pm'
+      - '6 December 2025 19:00'
+      - 'at 7pm' (defaults to today)
+    """
+    when_str = (args.get("when") or args.get("raw_message") or "").strip()
     if not when_str:
         return None
 
-    lower = when_str.lower()
-    now = datetime.now()
-    local_tz = now.astimezone().tzinfo or timezone.utc
+    local_tz = _local_tz()
+    now = datetime.now(local_tz)
 
-    # -------------------------
-    # 1) Explicit calendar date
-    # -------------------------
+    # If there is an explicit date, let dateutil parse full phrase
     if _has_explicit_date(when_str):
         try:
             dt = date_parser.parse(when_str, fuzzy=True)
@@ -97,259 +182,242 @@ def _parse_human_time(when_str: str) -> str | None:
 
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=local_tz)
-        return dt.astimezone(timezone.utc).isoformat()
+        return dt.astimezone(timezone.utc)
 
-    # -------------------------
-    # 2) Relative dates
-    # -------------------------
-    if "tomorrow" in lower or "today" in lower or "tonight" in lower:
-        base_date = now.date()
+    # Relative: today / tomorrow
+    lower = when_str.lower()
+    base_date: dt_date = now.date()
 
-        if "tomorrow" in lower:
-            base_date = base_date + timedelta(days=1)
+    if "tomorrow" in lower:
+        base_date = base_date + timedelta(days=1)
+        # strip the word to leave only time part
+        time_part = re.sub(r"\btomorrow\b", "", lower, flags=re.IGNORECASE).strip()
+    elif "today" in lower:
+        time_part = re.sub(r"\btoday\b", "", lower, flags=re.IGNORECASE).strip()
+    else:
+        time_part = lower
 
-        # Strip relative word from the time phrase
-        time_text = re.sub(
-            r"\b(tomorrow|today|tonight)\b", "", lower, flags=re.IGNORECASE
-        ).strip()
+    if not time_part:
+        # If only date-like info, assume 09:00
+        t = dt_time(hour=9, minute=0)
+        dt_local = datetime.combine(base_date, t).replace(tzinfo=local_tz)
+        return dt_local.astimezone(timezone.utc)
 
-        dt_local = _parse_time_only(time_text, base_date)
-        dt_local = dt_local.replace(tzinfo=local_tz)
-        return dt_local.astimezone(timezone.utc).isoformat()
+    try:
+        # parse *time only*, default date 2000-01-01
+        dt_time_only = date_parser.parse(
+            time_part,
+            fuzzy=True,
+            default=datetime(2000, 1, 1, 9, 0),
+        )
+        t = dt_time_only.time()
 
-    # -------------------------
-    # 3) Time-only → today
-    # -------------------------
-    dt_local = _parse_time_only(lower, now.date())
-    dt_local = dt_local.replace(tzinfo=local_tz)
-    return dt_local.astimezone(timezone.utc).isoformat()
+        # if '7pm' style (am/pm, no colon) → snap minutes to :00
+        lower_time = time_part.lower()
+        if (("am" in lower_time or "pm" in lower_time) and ":" not in lower_time):
+            t = t.replace(minute=0, second=0, microsecond=0)
+
+        dt_local = datetime.combine(base_date, t).replace(tzinfo=local_tz)
+        return dt_local.astimezone(timezone.utc)
+    except Exception:
+        return None
 
 
-# ---------------------------------------------------
-# MAIN TOOL
-# ---------------------------------------------------
+# -------------------------------------------------------------------
+# NORMALIZATION HELPERS
+# -------------------------------------------------------------------
+
+def _normalize_event(ev: Dict[str, Any]) -> Dict[str, Any]:
+    start = ev.get("start", {}) or {}
+    end = ev.get("end", {}) or {}
+    return {
+        "id": ev.get("id"),
+        "title": ev.get("summary") or "Untitled event",
+        "start": start.get("dateTime") or start.get("date"),
+        "end": end.get("dateTime") or end.get("date"),
+        "htmlLink": ev.get("htmlLink"),
+        "eventType": ev.get("eventType", "default"),
+    }
+
+
+def _is_deletable_event(ev: Dict[str, Any]) -> bool:
+    """
+    Avoid deleting non-editable types like 'birthday' events.
+    """
+    event_type = ev.get("eventType") or ev.get("kind")  # kind is usually 'calendar#event'
+    if str(event_type).lower() == "birthday":
+        return False
+    return True
+
+
+# -------------------------------------------------------------------
+# MAIN TOOL ENTRYPOINT
+# -------------------------------------------------------------------
 
 async def calendar_google_tool(args: Dict[str, Any], ctx: dict) -> Dict[str, Any]:
     """
     Google Calendar integration.
 
-    Actions:
-      - list / show / upcoming   → next 30 days
-      - create / add / schedule  → create a new 30-minute event
-      - delete / remove / cancel → delete an event
-      - update / reschedule      → move an event to a new time
+    Inputs (from EntityAgent/Planner):
+      args = {
+        "action": "create" | "list" | "delete" | "update",
+        "range_mode": optional canonical range ("today", "this_week", etc.),
+        "when": string (time phrase),
+        "raw_message": original user message,
+        ...
+      }
+
+    Returns structured dict with "status" key.
     """
-    service = _get_calendar_service()
-
-    raw_msg = str(ctx.get("message") or "")
-    action = (args.get("action") or "").lower().strip()
-
-    if not action:
-        # Fallback: infer from message if not explicitly set
-        if "show" in raw_msg.lower() or "upcoming" in raw_msg.lower():
-            action = "list"
-        else:
-            action = "create"
-
-    # ------------------- LIST EVENTS (next 30 days) -------------------
-    if action in ("list", "show", "upcoming"):
-        now = datetime.now(timezone.utc)
-        time_min = now.isoformat()
-        time_max = (now + timedelta(days=30)).isoformat()
-
-        results = service.events().list(
-            calendarId="primary",
-            timeMin=time_min,
-            timeMax=time_max,
-            maxResults=20,
-            singleEvents=True,
-            orderBy="startTime",
-        ).execute()
-
-        events = results.get("items", [])
-
-        parsed = []
-        for ev in events:
-            parsed.append(
-                {
-                    "id": ev.get("id"),
-                    "title": ev.get("summary") or "Untitled Event",
-                    "start": ev.get("start", {}).get("dateTime")
-                    or ev.get("start", {}).get("date"),
-                    "end": ev.get("end", {}).get("dateTime")
-                    or ev.get("end", {}).get("date"),
-                    "htmlLink": ev.get("htmlLink"),
-                }
-            )
-
+    try:
+        service = _get_calendar_service()
+    except Exception as e:
         return {
-            "status": "ok",
-            "mode": "list",
-            "count": len(parsed),
-            "events": parsed,
+            "status": "error",
+            "message": f"Failed to create Google Calendar service: {e}",
         }
 
-    # ------------------- CREATE EVENT -------------------
-    if action in ("create", "add", "schedule"):
-        title = (args.get("title") or "").strip() or "Cypher Event"
+    action = (args.get("action") or "").lower().strip()
+    raw_msg = str(args.get("raw_message") or "")
 
-        # IMPORTANT: always parse the FULL user message for time
-        when_iso = args.get("when_iso")
-        if not when_iso:
-            when_iso = _parse_human_time(raw_msg)
+    # ------------------ LIST EVENTS ------------------
+    if action == "list":
+        try:
+            start_dt, end_dt = _resolve_range(args)
+            events_resp = service.events().list(
+                calendarId="primary",
+                timeMin=start_dt.isoformat(),
+                timeMax=end_dt.isoformat(),
+                singleEvents=True,
+                orderBy="startTime",
+                maxResults=50,
+            ).execute()
+            events_raw = events_resp.get("items", []) or []
 
-        if not when_iso:
+            events = [_normalize_event(ev) for ev in events_raw]
+
+            return {
+                "status": "ok",
+                "mode": "list",
+                "range": {
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                },
+                "count": len(events),
+                "events": events,
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "mode": "list",
+                "message": f"Error while listing events: {e}",
+            }
+
+    # ------------------ CREATE EVENT ------------------
+    if action == "create":
+        dt_utc = _parse_event_time(args)
+        if dt_utc is None:
             return {
                 "status": "error",
                 "mode": "create",
                 "message": (
                     "I couldn't understand the event time. "
                     "Try something like 'tomorrow at 6 PM' or "
-                    "'on 3rd December 2025 at 9 PM'."
+                    "'on 5th December 2025 at 7 PM'."
                 ),
             }
 
-        dt = datetime.fromisoformat(when_iso)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+        end_dt = dt_utc + timedelta(minutes=30)
 
-        end_dt = dt + timedelta(minutes=30)
+        title = (args.get("title") or "").strip() or "Cypher Event"
 
         event_body = {
             "summary": title,
-            "start": {"dateTime": dt.isoformat()},
+            "start": {"dateTime": dt_utc.isoformat()},
             "end": {"dateTime": end_dt.isoformat()},
         }
 
-        created = service.events().insert(
-            calendarId="primary", body=event_body
-        ).execute()
+        try:
+            created = service.events().insert(
+                calendarId="primary",
+                body=event_body,
+            ).execute()
 
-        return {
-            "status": "ok",
-            "mode": "create",
-            "id": created.get("id"),
-            "title": created.get("summary"),
-            "start": created.get("start", {}).get("dateTime")
-            or created.get("start", {}).get("date"),
-            "end": created.get("end", {}).get("dateTime")
-            or created.get("end", {}).get("date"),
-            "htmlLink": created.get("htmlLink"),
-        }
+            created_norm = _normalize_event(created)
 
-    # ------------------- SMART DELETE EVENT -------------------
-    if action in ("delete", "remove", "cancel"):
-        query = (args.get("query") or "").lower()
+            return {
+                "status": "ok",
+                "mode": "create",
+                "id": created_norm["id"],
+                "title": created_norm["title"],
+                "start": created_norm["start"],
+                "end": created_norm["end"],
+                "htmlLink": created_norm["htmlLink"],
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "mode": "create",
+                "message": f"Error while creating event: {e}",
+            }
 
-        now = datetime.now(timezone.utc).isoformat()
+    # ------------------ DELETE (BULK) ------------------
+    if action == "delete":
+        try:
+            start_dt, end_dt = _resolve_range(args)
 
-        events = service.events().list(
-            calendarId="primary",
-            timeMin=now,
-            maxResults=50,
-            singleEvents=True,
-            orderBy="startTime",
-        ).execute().get("items", [])
+            events_resp = service.events().list(
+                calendarId="primary",
+                timeMin=start_dt.isoformat(),
+                timeMax=end_dt.isoformat(),
+                singleEvents=True,
+                orderBy="startTime",
+                maxResults=100,
+            ).execute()
+            events_raw = events_resp.get("items", []) or []
 
-        if not events:
-            return {"status": "error", "message": "No upcoming events found."}
+            deletable = [ev for ev in events_raw if _is_deletable_event(ev)]
 
-        matched = []
-        for ev in events:
-            title = (ev.get("summary") or "").lower()
-            start = ev.get("start", {}).get("dateTime", "") or ""
-            if query and (query in title or query in start.lower()):
-                matched.append(ev)
+            deleted: List[Dict[str, Any]] = []
+            for ev in deletable:
+                try:
+                    service.events().delete(
+                        calendarId="primary",
+                        eventId=ev["id"],
+                    ).execute()
+                    deleted.append(_normalize_event(ev))
+                except Exception:
+                    # Skip events we can't delete (permissions, birthday, etc.)
+                    continue
 
-        target = matched[0] if matched else events[0]
+            return {
+                "status": "ok",
+                "mode": "delete",
+                "deleted_count": len(deleted),
+                "deleted_events": deleted,
+                "range": {
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                },
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "mode": "delete",
+                "message": f"Error while deleting events: {e}",
+            }
 
-        service.events().delete(
-            calendarId="primary", eventId=target["id"]
-        ).execute()
-
-        return {
-            "status": "ok",
-            "mode": "delete",
-            "deleted": {
-                "title": target.get("summary"),
-                "start": target.get("start"),
-            },
-        }
-
-    # ------------------- RESCHEDULE EVENT -------------------
+    # ------------------ UPDATE (RESCHEDULE, FUTURE) ------------------
     if action in ("update", "reschedule", "move"):
-        # 1) Figure out the NEW time phrase
-        raw = raw_msg
-
-        # Explicit override from args if we ever add it later
-        new_time_phrase = (args.get("new_time") or "").strip()
-
-        if not new_time_phrase:
-            # Split on "to" and take the right-hand side as the NEW time
-            parts = re.split(r"\bto\b", raw, maxsplit=1, flags=re.IGNORECASE)
-            if len(parts) == 2:
-                new_time_phrase = parts[1].strip()
-            else:
-                # Fallback: use whole message (worst-case, same behavior as before)
-                new_time_phrase = raw
-
-        new_time_iso = _parse_human_time(new_time_phrase)
-        if not new_time_iso:
-            return {
-                "status": "error",
-                "message": "I couldn't understand the new time for reschedule.",
-            }
-
-        new_dt = datetime.fromisoformat(new_time_iso)
-        if new_dt.tzinfo is None:
-            new_dt = new_dt.replace(tzinfo=timezone.utc)
-        new_end_dt = new_dt + timedelta(minutes=30)
-
-        # 2) For now: pick the earliest upcoming event and move it
-        now = datetime.now(timezone.utc).isoformat()
-        events = service.events().list(
-            calendarId="primary",
-            timeMin=now,
-            maxResults=30,
-            singleEvents=True,
-            orderBy="startTime",
-        ).execute().get("items", [])
-
-        if not events:
-            return {
-                "status": "error",
-                "message": "No upcoming event found to reschedule.",
-            }
-
-        target = events[0]
-
-        # Ensure we have datetime start/end
-        start_obj = target.get("start", {})
-        end_obj = target.get("end", {})
-        start_obj["dateTime"] = new_dt.isoformat()
-        start_obj.pop("date", None)
-        end_obj["dateTime"] = new_end_dt.isoformat()
-        end_obj.pop("date", None)
-        target["start"] = start_obj
-        target["end"] = end_obj
-
-        updated = service.events().update(
-            calendarId="primary", eventId=target["id"], body=target
-        ).execute()
-
+        # For now not implemented; we just signal this cleanly.
         return {
-            "status": "ok",
+            "status": "error",
             "mode": "update",
-            "rescheduled": {
-                "title": updated.get("summary"),
-                "new_time": updated.get("start", {}).get("dateTime")
-                or updated.get("start", {}).get("date"),
-                "htmlLink": updated.get("htmlLink"),
-            },
+            "message": "Rescheduling events is not implemented yet.",
         }
 
-    # ------------------- UNKNOWN ACTION -------------------
+    # ------------------ UNKNOWN ACTION ------------------
     return {
         "status": "error",
-        "message": f"Unknown calendar action: {action}",
+        "message": f"Unknown calendar action: {action or 'None'}",
     }
