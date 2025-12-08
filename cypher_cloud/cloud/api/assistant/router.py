@@ -131,8 +131,6 @@ def get_trace():
     }
 
 
-from cloud.api.assistant.orchestrator.tracer import tracer
-
 @router.get("/debug/plan")
 async def debug_plan(trace_id: str | None = None):
     """
@@ -140,25 +138,24 @@ async def debug_plan(trace_id: str | None = None):
     for a given trace. If trace_id is not provided, the latest trace
     from the tracer timeline is used.
     """
-
-    # 1) If no trace_id provided, pick the latest trace from the timeline
+    # 1) Get timeline
     events = tracer.timeline()
     if not events:
         return {"error": "No trace data yet"}
 
+    # 2) Use latest trace if none provided
     if not trace_id:
-        # Last event in time-ordered list → latest trace
         trace_id = events[-1]["trace_id"]
 
-    # 2) Look up the attached execution context
+    # 3) Look up context (ExecutionContext) for this trace
     ctx = tracer.get_context(trace_id)
     if ctx is None:
         return {"error": f"No context found for trace_id={trace_id}"}
 
-    # ctx is an ExecutionContext, not a dict
+    # ctx is expected to be an ExecutionContext with .extras
     extras = getattr(ctx, "extras", {}) or {}
 
-    # 3) Pull out the ExecutionPlan object and steps list
+    # 4) Pull plan info out of extras
     plan_obj = extras.get("execution_plan")
     plan_steps = extras.get("plan") or []
     plan_debug = extras.get("plan_debug") or {}
@@ -166,23 +163,49 @@ async def debug_plan(trace_id: str | None = None):
     if plan_obj is None:
         return {"error": "No plan attached to this trace"}
 
-    # 4) Build a JSON-friendly payload
     explanation = getattr(plan_obj, "explanation", None)
     score = getattr(plan_obj, "score_breakdown", {})
     rejected = getattr(plan_obj, "rejected", [])
+
+    # 5) 🔎 Arbiter info
+    #    First try annotations (EPIC #1 trace annotations),
+    #    then fall back to the decision stored in extras.
+    annotations = tracer.annotations_for(trace_id)
+    arbiter_info = None
+    if isinstance(annotations, dict):
+        arbiter_info = annotations.get("arbiter")
+
+    if arbiter_info is None:
+        # Fallback: arbiter decision stored by the graph in extras["decision"]
+        arbiter_info = extras.get("decision")
 
     return {
         "trace_id": trace_id,
         "plan": {
             "explanation": explanation,
             "score": score,
-            "steps": plan_steps,    # already a list[dict]
-            "rejected": rejected,   # list[ExecutionPlan] objects summary
+            "steps": plan_steps,
+            "rejected": rejected,
         },
+        "arbiter": arbiter_info,
         "debug": plan_debug,
     }
 
 
+
+@router.get("/debug/trace/annotations")
+async def trace_annotations(trace_id: str | None = None):
+    """
+    Get annotations for a given trace-id, or all annotations if trace_id is omitted.
+    """
+    if trace_id:
+        return {
+            "trace_id": trace_id,
+            "annotations": tracer.annotations_for(trace_id),
+        }
+    return {
+        "annotations": tracer.all_annotations(),
+    }
 
 
 @router.get("/debug/trace/heatmap")

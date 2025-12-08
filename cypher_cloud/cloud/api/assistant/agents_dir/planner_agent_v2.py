@@ -141,6 +141,15 @@ class PlannerV2:
             for p in ranked
         ]
 
+        # ✅ TRACE ANNOTATION: attach plan decision to trace context
+        context.setdefault("trace_annotations", {})
+        context["trace_annotations"]["plan"] = {
+            "chosen": best.explanation,
+            "score": best.score_breakdown,
+            "steps": [s.tool for s in best.steps],
+        }
+
+
         return best
 
     # ---------------------------------------------------------

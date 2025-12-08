@@ -7,7 +7,7 @@ import threading
 import logging
 import uuid
 
-from .node import NodeStatus  # you already have this Enum in node.py
+from .node import NodeStatus
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------
 # DATA MODEL
 # ---------------------------------------------------------
+
 
 @dataclass
 class GraphEvent:
@@ -30,69 +31,44 @@ class GraphEvent:
 # TRACER CORE
 # ---------------------------------------------------------
 
+
 class GraphTracer:
     """
     Singleton in-memory execution tracer.
 
-    REQUIRED by:
+    Used by:
       - cypher_graph.py
-      - executor.py
-      - failure_node.py
-      - React Trace Inspector
-      - /debug/plan (via context attachment)
+      - graph.py
+      - executor / planner / failure nodes
+      - React Trace Inspector (Phase 4 UI)
+
+    Responsibilities:
+      • per-node event logging
+      • basic performance stats (slow nodes)
+      • trace timeline view
+      • failure map
+      • context attachment (for /debug/plan)
+      • trace annotations (EPIC #1)
     """
 
     def __init__(self) -> None:
         self._events: List[GraphEvent] = []
         self._lock = threading.Lock()
-        # trace_id -> orchestration context (ctx dict)
-        self._contexts: Dict[str, Dict[str, Any]] = {}
-        self._current_trace_id: Optional[str] = None
+
+        # execution context & annotations keyed by trace_id
+        self._contexts: Dict[str, Any] = {}
+        self._annotations: Dict[str, Dict[str, Any]] = {}
 
     # -------------------------
-    # TRACE ID MANAGEMENT
+    # TRACE ID
     # -------------------------
 
     def new_trace(self) -> str:
         """
-        Create and remember a new trace id for the next run.
+        Generate a fresh trace_id for a new end-to-end request.
+        Does NOT clear previous events (we keep history).
         """
-        tid = str(uuid.uuid4())
-        with self._lock:
-            self._current_trace_id = tid
-        return tid
-
-    @property
-    def current_trace_id(self) -> Optional[str]:
-        with self._lock:
-            return self._current_trace_id
-
-    # -------------------------
-    # CONTEXT ATTACHMENT
-    # -------------------------
-
-    def attach_context(self, trace_id: str, ctx: Dict[str, Any]) -> None:
-        """
-        Attach the *orchestration context* (the ctx dict you pass
-        through the graph) to a given trace_id so /debug/plan can inspect it.
-        """
-        with self._lock:
-            self._contexts[trace_id] = ctx
-
-    def get_context(self, trace_id: str) -> Optional[Dict[str, Any]]:
-        with self._lock:
-            return self._contexts.get(trace_id)
-
-    def last_context(self) -> Optional[Dict[str, Any]]:
-        """
-        Convenience helper: get the context for the most recent trace
-        (by event order).
-        """
-        with self._lock:
-            if not self._events:
-                return None
-            last_id = self._events[-1].trace_id
-            return self._contexts.get(last_id)
+        return str(uuid.uuid4())
 
     # -------------------------
     # RECORD EVENTS
@@ -103,13 +79,10 @@ class GraphTracer:
         *,
         trace_id: str,
         node: str,
-        status: NodeStatus | str,
+        status: NodeStatus,
         message: str = "",
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """
-        Record a single node event.
-        """
         evt = GraphEvent(
             trace_id=trace_id,
             timestamp=time.time(),
@@ -148,14 +121,10 @@ class GraphTracer:
             ]
 
     def clear(self) -> None:
-        """
-        Clear recorded events for a fresh run.
-
-        NOTE: we do NOT clear _contexts here so that /debug/plan
-        can still inspect previous runs if needed.
-        """
         with self._lock:
             self._events.clear()
+            self._contexts.clear()
+            self._annotations.clear()
 
     # -------------------------
     # UI SUPPORT METHODS
@@ -167,37 +136,39 @@ class GraphTracer:
 
     def slowest_nodes(self, top: int = 5) -> List[Dict[str, Any]]:
         """
-        Aggregates total duration per node across all traces.
-        Used by the top-level /debug/trace slowest section.
+        Nodes with highest cumulative runtime based on extra['duration_ms'].
         """
         durations: Dict[str, float] = {}
         counts: Dict[str, int] = {}
 
         with self._lock:
             for e in self._events:
-                ms = e.extra.get("duration_ms")
-                if ms is None:
+                if e.status != "SUCCESS":
                     continue
-                try:
-                    ms_val = float(ms)
-                except Exception:
+                ms = float(e.extra.get("duration_ms") or 0)
+                if ms <= 0:
                     continue
-                durations[e.node] = durations.get(e.node, 0.0) + ms_val
+                durations[e.node] = durations.get(e.node, 0.0) + ms
                 counts[e.node] = counts.get(e.node, 0) + 1
 
-        slow = []
+        rows: List[Dict[str, Any]] = []
         for node, total in durations.items():
             count = counts.get(node, 1)
-            slow.append(
+            rows.append(
                 {
                     "node": node,
                     "total_ms": total,
                     "count": count,
-                    "avg": total / max(count, 1),
+                    "avg": total / count,
                 }
             )
 
-        return sorted(slow, key=lambda x: x["total_ms"], reverse=True)[:top]
+        rows.sort(key=lambda r: r["total_ms"], reverse=True)
+        return rows[:top]
+
+    # Alias used by router (`/debug/trace/slow`)
+    def slow_nodes(self, top: int = 5) -> List[Dict[str, Any]]:
+        return self.slowest_nodes(top=top)
 
     def summary(self) -> Dict[str, Any]:
         with self._lock:
@@ -216,90 +187,137 @@ class GraphTracer:
                 "failures": failures,
             }
 
-    # -------- extra helpers used by router endpoints --------
+    # -------------------------
+    # CONTEXT + ANNOTATIONS
+    # -------------------------
 
-    def heatmap(self) -> Dict[str, Any]:
+    def attach_context(self, trace_id: str, ctx: Any) -> None:
         """
-        Structure events as trace → node grid. Good for raw debugging.
-        """
-        with self._lock:
-            events = list(self._events)
+        Attach the final ExecutionContext (or ctx dict) for a trace.
 
-        traces: Dict[str, Dict[str, Any]] = {}
-        for e in events:
-            t = traces.setdefault(e.trace_id, {})
-            t[e.node] = {
-                "status": e.status,
-                "message": e.message,
-                "duration_ms": e.extra.get("duration_ms"),
-            }
-
-        return {"traces": traces}
-
-    def slow_nodes(self) -> List[Dict[str, Any]]:
-        """
-        Same as slowest_nodes but returns full list (for /debug/trace/slow).
+        Also snapshots any trace annotations present on the context.
         """
         with self._lock:
-            events = list(self._events)
+            self._contexts[trace_id] = ctx
 
-        durations: Dict[str, float] = {}
-        counts: Dict[str, int] = {}
+            # Harvest annotations from either attribute or dict key
+            annotations: Optional[Dict[str, Any]] = None
 
-        for e in events:
-            ms = e.extra.get("duration_ms")
-            if ms is None:
-                continue
-            try:
-                ms_val = float(ms)
-            except Exception:
-                continue
-            durations[e.node] = durations.get(e.node, 0.0) + ms_val
-            counts[e.node] = counts.get(e.node, 0) + 1
+            if hasattr(ctx, "trace_annotations"):
+                annotations = getattr(ctx, "trace_annotations", None)
+            elif isinstance(ctx, dict):
+                annotations = ctx.get("trace_annotations")
 
-        nodes = []
-        for node, total in durations.items():
-            count = counts.get(node, 1)
-            nodes.append(
-                {
-                    "node": node,
-                    "total_ms": total,
-                    "count": count,
-                    "avg": total / max(count, 1),
+            if isinstance(annotations, dict):
+                # Filter out keys whose value is None, so we don't emit
+                # `"arbiter": null` etc. when they were never set.
+                clean = {k: v for k, v in annotations.items() if v is not None}
+                if clean:
+                    self._annotations[trace_id] = clean
+
+    def get_context(self, trace_id: str) -> Any:
+        with self._lock:
+            return self._contexts.get(trace_id)
+
+    def annotations_for(self, trace_id: str) -> Dict[str, Any]:
+        """
+        Return annotations for a specific trace_id, with any `None` values removed.
+        """
+        with self._lock:
+            ann = self._annotations.get(trace_id) or {}
+            if isinstance(ann, dict):
+                return {k: v for k, v in ann.items() if v is not None}
+            return {}
+
+    def all_annotations(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Return annotations for all traces, with `None` values removed.
+        """
+        with self._lock:
+            out: Dict[str, Dict[str, Any]] = {}
+            for tid, ann in self._annotations.items():
+                if isinstance(ann, dict):
+                    clean = {k: v for k, v in ann.items() if v is not None}
+                    if clean:
+                        out[tid] = clean
+            return out
+
+    # -------------------------
+    # EXTRA DEBUG HELPERS
+    # -------------------------
+
+    def heatmap(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Simple heatmap backing structure:
+
+        {
+          trace_id: {
+            node_name: {
+              "status": "...",
+              "duration_ms": ...,
+              "message": "...",
+            },
+            ...
+          },
+          ...
+        }
+        """
+        per_trace: Dict[str, Dict[str, Any]] = {}
+        with self._lock:
+            for e in self._events:
+                bucket = per_trace.setdefault(e.trace_id, {})
+                duration = float(e.extra.get("duration_ms") or 0)
+                bucket[e.node] = {
+                    "status": e.status,
+                    "duration_ms": duration,
+                    "message": e.message,
                 }
-            )
-
-        return sorted(nodes, key=lambda x: x["total_ms"], reverse=True)
+        return per_trace
 
     def failure_map(self) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Map of trace_id → list of failed node events.
+        Map of trace_id -> list of failure events.
         """
+        failures: Dict[str, List[Dict[str, Any]]] = {}
         with self._lock:
-            events = list(self._events)
-
-        out: Dict[str, List[Dict[str, Any]]] = {}
-        for e in events:
-            if e.status not in ("FAILED", "ERROR"):
-                continue
-            out.setdefault(e.trace_id, []).append(
-                {
-                    "node": e.node,
-                    "message": e.message,
-                    "extra": e.extra,
-                }
-            )
-        return out
+            for e in self._events:
+                if e.status not in ("FAILED", "ERROR"):
+                    continue
+                failures.setdefault(e.trace_id, []).append(
+                    {
+                        "timestamp": e.timestamp,
+                        "node": e.node,
+                        "status": e.status,
+                        "message": e.message,
+                        "extra": e.extra,
+                    }
+                )
+        return failures
 
     def trace_by_id(self, trace_id: str) -> List[Dict[str, Any]]:
         """
-        Return all events for a specific trace id.
+        Return all events for a given trace_id, ordered by time.
         """
-        return [e for e in self.to_dict() if e["trace_id"] == trace_id]
+        with self._lock:
+            rows = [
+                {
+                    "trace_id": e.trace_id,
+                    "timestamp": e.timestamp,
+                    "node": e.node,
+                    "status": e.status,
+                    "message": e.message,
+                    "extra": e.extra,
+                }
+                for e in self._events
+                if e.trace_id == trace_id
+            ]
+
+        rows.sort(key=lambda r: r["timestamp"])
+        return rows
 
 
 # ---------------------------------------------------------
-# GLOBAL SINGLETON (DO NOT DELETE)
+# GLOBAL SINGLETON
 # ---------------------------------------------------------
 
 tracer = GraphTracer()

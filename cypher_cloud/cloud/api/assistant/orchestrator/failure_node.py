@@ -31,6 +31,16 @@ class FailureNode:
             print("Node:", node_name)
             print("Error:", error)
 
+            # ✅ TRACE ANNOTATION: failure info
+            ctx.setdefault("trace_annotations", {})
+            ctx["trace_annotations"]["failure"] = {
+                "node": node_name,
+                "error": str(error),
+                "type": info.get("type"),
+                "severity": info.get("severity"),
+            }
+
+
             info = FailureClassifier.classify(error)
 
             # 🔴 record failure in tracer so /debug/trace sees it
