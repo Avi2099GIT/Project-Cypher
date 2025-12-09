@@ -56,6 +56,7 @@ export default function TraceInspectorApp() {
   const [nodeFilter, setNodeFilter] = useState("");
   const [minMs, setMinMs] = useState(0);
   const [showFailedOnly, setShowFailedOnly] = useState(false);
+  const [showPassedOnly, setShowPassedOnly] = useState(false);
   const [slowLimit, setSlowLimit] = useState(300);
   const [criticalLimit, setCriticalLimit] = useState(800);
 
@@ -74,15 +75,25 @@ export default function TraceInspectorApp() {
       });
   };
 
+  // REMOVE old initial-load duplication
+  // useEffect(() => { load(); }, []);
+
+  // ✅ Always load ONCE when component mounts
   useEffect(() => {
     load();
   }, []);
 
+  // ✅ Live controls polling ONLY
   useEffect(() => {
     if (!live) return;
-    const id = setInterval(load, 2000);
+
+    const id = setInterval(() => {
+      load();
+    }, 2000);
+
     return () => clearInterval(id);
   }, [live]);
+
 
   /* ======================== LOAD PLAN ======================== */
 
@@ -111,9 +122,7 @@ export default function TraceInspectorApp() {
     fetch("http://127.0.0.1:8000/v1/assistant/debug/metrics")
       .then((r) => r.json())
       .then(setMetrics)
-      .catch(() => {
-        // metrics are nice-to-have, never break UI
-      });
+      .catch(() => {});
   }, []);
 
   /* ======================== DERIVED ======================== */
@@ -128,12 +137,16 @@ export default function TraceInspectorApp() {
 
   const traces: TraceGroup[] = useMemo(() => {
     const byId = new Map<string, TraceEvent[]>();
+
     for (const e of events) {
       if (!byId.has(e.trace_id)) byId.set(e.trace_id, []);
       byId.get(e.trace_id)!.push(e);
     }
-    for (const list of byId.values())
+
+    for (const list of byId.values()) {
       list.sort((a, b) => a.timestamp - b.timestamp);
+    }
+
     return Array.from(byId.entries()).map(([id, evs]) => ({ id, events: evs }));
   }, [events]);
 
@@ -157,21 +170,27 @@ export default function TraceInspectorApp() {
         if (!hasFail) return false;
       }
 
+      if (showPassedOnly) {
+        const hasFailure = t.events.some(
+          (e) => e.status === "FAILED" || e.status === "ERROR"
+        );
+        if (hasFailure) return false;
+      }
+
+
       if (minMs > 0) {
-        const slow = t.events.some(
-          (e) => {
+        const slow = t.events.some((e) => {
           const d = extractDuration(e);
           return d != null && d >= minMs;
-        }
-        );
+        });
         if (!slow) return false;
       }
 
       return true;
     });
-  }, [traces, traceSearch, nodeFilter, showFailedOnly, minMs]);
+  }, [traces, traceSearch, nodeFilter, showFailedOnly,showPassedOnly, minMs]);
 
-  const visibleTraces = filteredTraces.length > 0 ? filteredTraces : traces;
+  const visibleTraces = filteredTraces;
 
   const selectedTrace =
     selectedTraceId != null
@@ -183,12 +202,10 @@ export default function TraceInspectorApp() {
   function extractDuration(ev?: TraceEvent): number | null {
     if (!ev) return null;
 
-    // 1️⃣ Prefer structured duration from backend
     if (typeof ev.extra?.duration_ms === "number") {
       return ev.extra.duration_ms;
     }
 
-    // 2️⃣ Parse from message text (fallback)
     if (typeof ev.message === "string") {
       const match = ev.message.match(/([\d.]+)\s*(ms|s)/i);
       if (match) {
@@ -200,18 +217,16 @@ export default function TraceInspectorApp() {
     return null;
   }
 
-
   function cellColor(ev?: TraceEvent): string {
-    if (!ev) return "#222"; // skipped
+    if (!ev) return "#222";
 
     const dur = extractDuration(ev);
 
     if (ev.status === "FAILED" || ev.status === "ERROR") return "#8b1e3f";
-    if (dur == null) return "#333"; // no timing info
-
+    if (dur == null) return "#333";
     if (dur >= criticalLimit) return "#e53935";
     if (dur >= slowLimit) return "#f9a825";
-    if (dur > 0) return "#1b5e20"; // ✅ finally GREEN
+    if (dur > 0) return "#1b5e20";
 
     return "#333";
   }
@@ -221,6 +236,16 @@ export default function TraceInspectorApp() {
     if (ms < 1000) return `${ms.toFixed(1)} ms`;
     return `${(ms / 1000).toFixed(2)} s`;
   }
+
+  function traceStatus(t: TraceGroup): "PASS" | "FAIL" | "EMPTY" {
+    if (t.events.length === 0) return "EMPTY";
+
+    const hasFail = t.events.some(
+      (e) => e.status === "FAILED" || e.status === "ERROR"
+    );
+    return hasFail ? "FAIL" : "PASS";
+  }
+
 
   /* ======================== UI ======================== */
 
@@ -234,8 +259,8 @@ export default function TraceInspectorApp() {
           <h1 style={{ margin: 0 }}>🧠 Cypher Trace Heatmap</h1>
           <small>Phase-4 · Agent orchestration · Execution observability</small>
         </div>
-        <button onClick={load} style={refreshButtonStyle}>
-          ⟳ Refresh
+        <button onClick={load} style={refreshButtonStyle} disabled={live}>
+          {live ? "LIVE" : "⟳ Refresh"}
         </button>
       </header>
 
@@ -283,11 +308,30 @@ export default function TraceInspectorApp() {
           <input
             type="checkbox"
             checked={showFailedOnly}
-            onChange={(e) => setShowFailedOnly(e.target.checked)}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              setShowFailedOnly(checked);
+              if (checked) setShowPassedOnly(false);   // ✅ prevent conflict
+            }}
           />{" "}
           Failed
         </label>
+
       </div>
+
+      <label>
+        <input
+          type="checkbox"
+          checked={showPassedOnly}
+          onChange={(e) => {
+            const checked = e.target.checked;
+            setShowPassedOnly(checked);
+            if (checked) setShowFailedOnly(false);   // ✅ prevent conflict
+          }}
+        />{" "}
+        Passed
+      </label>
+
 
       {/* SUMMARY */}
       <section style={summaryRowStyle}>
@@ -374,31 +418,19 @@ export default function TraceInspectorApp() {
               label="Healthy"
               desc="Executed within normal time"
             />
-            <LegendItem
-              color="#f9a825"
-              label="Slow"
-              desc={`>${slowLimit} ms`}
-            />
+            <LegendItem color="#f9a825" label="Slow" desc={`>${slowLimit} ms`} />
             <LegendItem
               color="#e53935"
               label="Critical"
               desc={`>${criticalLimit} ms`}
             />
-            <LegendItem
-              color="#8b1e3f"
-              label="Failed"
-              desc="Execution error"
-            />
+            <LegendItem color="#8b1e3f" label="Failed" desc="Execution error" />
             <LegendItem
               color="#333"
               label="No Duration"
               desc="Completed but no timing info"
             />
-            <LegendItem
-              color="#222"
-              label="Skipped"
-              desc="Node did not run"
-            />
+            <LegendItem color="#222" label="Skipped" desc="Node did not run" />
           </div>
 
           <table style={heatmapTableStyle}>
@@ -410,53 +442,88 @@ export default function TraceInspectorApp() {
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {visibleTraces.map((t) => (
-                <tr
-                  key={t.id}
-                  onClick={() => setSelectedTraceId(t.id)}
-                  style={{
-                    background:
-                      selectedTrace?.id === t.id ? "#263043" : "transparent",
-                    cursor: "pointer",
-                  }}
-                >
-                  <td>
-                    <code>{t.id.slice(0, 8)}</code>
-                  </td>
-                  {nodes.map((n) => {
-                    const ev =
-                      [...t.events]
-                        .filter((e) => e.node === n)
-                        .sort((a, b) => {
-                          const p = (s: string) =>
-                            s === "SUCCESS" ? 3 : s === "FAILED" ? 2 : s === "RUNNING" ? 1 : 0;
-                          return p(b.status) - p(a.status);
-                        })[0] || undefined;
 
-                    const dur = extractDuration(ev) ?? undefined;
-                    return (
-                      <td key={n}>
-                        <div
-                          title={
-                            ev
-                              ? `${ev.node} | ${ev.status} | ${
-                                  dur !== undefined ? formatMs(dur) : ""
-                                }`
-                              : ""
-                          }
-                          style={{
-                            height: 14,
-                            borderRadius: 4,
-                            background: cellColor(ev),
-                            border: "1px solid #333",
-                          }}
-                        />
-                      </td>
-                    );
-                  })}
+            <tbody>
+              {visibleTraces.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={nodes.length + 1}
+                    style={{ textAlign: "center", padding: 20 }}
+                  >
+                    No traces match current filters
+                  </td>
                 </tr>
-              ))}
+              ) : (
+                visibleTraces.map((t) => (
+                  <tr
+                    key={t.id}
+                    onClick={() => setSelectedTraceId(t.id)}
+                    style={{
+                      background:
+                        selectedTrace?.id === t.id ? "#263043" : "transparent",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <td style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: "50%",
+                          display: "inline-block",
+                          background:
+                            traceStatus(t) === "FAIL"
+                              ? "#e53935"
+                              : traceStatus(t) === "PASS"
+                              ? "#1b5e20"
+                              : "#666",
+                        }}
+                      />
+                      <code>{t.id.slice(0, 8)}</code>
+                    </td>
+
+
+                    {nodes.map((n) => {
+                      const ev =
+                        [...t.events]
+                          .filter((e) => e.node === n)
+                          .sort((a, b) => {
+                            const p = (s: string) =>
+                              s === "SUCCESS"
+                                ? 3
+                                : s === "FAILED"
+                                ? 2
+                                : s === "RUNNING"
+                                ? 1
+                                : 0;
+                            return p(b.status) - p(a.status);
+                          })[0] || undefined;
+
+                      const dur = extractDuration(ev) ?? undefined;
+
+                      return (
+                        <td key={n}>
+                          <div
+                            title={
+                              ev
+                                ? `${ev.node} | ${ev.status} | ${
+                                    dur !== undefined ? formatMs(dur) : ""
+                                  }`
+                                : ""
+                            }
+                            style={{
+                              height: 14,
+                              borderRadius: 4,
+                              background: cellColor(ev),
+                              border: "1px solid #333",
+                            }}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </Card>
@@ -469,6 +536,7 @@ export default function TraceInspectorApp() {
               <small>
                 <code>{selectedTrace.id}</code>
               </small>
+
               <ol>
                 {selectedTrace.events.map((e) => (
                   <li key={e.timestamp}>
@@ -492,19 +560,16 @@ export default function TraceInspectorApp() {
               {plan?.plan && (
                 <>
                   <h4>Why this plan?</h4>
-
                   <pre style={jsonBox}>
                     {JSON.stringify(plan.plan.explanation, null, 2)}
                   </pre>
 
                   <h4>Score Breakdown</h4>
-
                   <pre style={jsonBox}>
                     {JSON.stringify(plan.plan.score, null, 2)}
                   </pre>
 
                   <h4>Execution Steps</h4>
-
                   <ol>
                     {plan.plan.steps.map((s: any, i: number) => (
                       <li key={i}>
