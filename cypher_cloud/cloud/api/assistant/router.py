@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Dict, Any, List
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 from cloud.api.assistant.agents_dir.reasoning_agent import ReasoningAgent
 from .agents_dir.brain import CypherBrain
@@ -16,10 +16,11 @@ from cloud.api.assistant.orchestrator.tracer import tracer
 
 
 @router.get("/debug/trace")
-async def get_trace():
+def get_trace():
     return {
-        "events": tracer.to_dict(),
-        "summary": tracer.summary()
+        "events": tracer.timeline(),
+        "summary": tracer.summary(),
+        "slowest": tracer.slowest_nodes(),
     }
 
 # -------------------------------------------------------------------
@@ -41,7 +42,7 @@ class AssistantResponse(BaseModel):
 # MAIN ENDPOINT (MULTI-AGENT PIPELINE)
 # -------------------------------------------------------------------
 
-router.include_router(trace_router)
+#router.include_router(trace_router)
 @router.post("/query", response_model=AssistantResponse)
 async def assistant_query(payload: AssistantQuery):
 
@@ -80,25 +81,25 @@ async def assistant_query(payload: AssistantQuery):
     # --------------------------------------------------------
     # Store memory episodes (Memory V2)
     # --------------------------------------------------------
-    # try:
-    #     memory_service.store_episode(
-    #         device=device,
-    #         role="user",
-    #         content=payload.message,
-    #         meta={"source": "api"},
-    #     )
+    try:
+        memory_service.store_episode(
+            device=device,
+            role="user",
+            content=payload.message,
+            meta={"source": "api", "trace_id": ctx["trace_id"]},
+        )
 
-    #     memory_service.store_episode(
-    #         device=device,
-    #         role="assistant",
-    #         content=reply_text,
-    #         meta={"source": "api"},
-    #     )
+        memory_service.store_episode(
+            device=device,
+            role="assistant",
+            content=reply_text,
+            meta={"source": "api", "trace_id": ctx["trace_id"]},
+        )
 
-    # except Exception:
-    #     # Memory must never crash the API
-    #     import logging
-    #     logging.exception("Failed to store memory episode")   
+    except Exception:
+        import logging
+        logging.exception("Failed to store memory episode")
+
 
     # --------------------------------------------------------
     # Snapshot memory (for UI / debug tools)
@@ -120,15 +121,15 @@ async def assistant_query(payload: AssistantQuery):
     )
 
 
-from cloud.api.assistant.orchestrator.tracer import tracer
+#from cloud.api.assistant.orchestrator.tracer import tracer
 
-@router.get("/v1/assistant/debug/trace")
-def get_trace():
-    return {
-        "events": tracer.timeline(),
-        "summary": tracer.summary(),
-        "slowest": tracer.slowest_nodes(),
-    }
+# @router.get("/v1/assistant/debug/trace")
+# def get_trace():
+#     return {
+#         "events": tracer.timeline(),
+#         "summary": tracer.summary(),
+#         "slowest": tracer.slowest_nodes(),
+#     }
 
 
 @router.get("/debug/plan")
@@ -195,6 +196,13 @@ async def debug_plan(trace_id: str | None = None):
 def metrics():
     return tracer.metrics()
 
+
+@router.get("/debug/memory")
+def debug_memory(trace_id: str = Query(...)):
+    """
+    Inspect all memory interactions related to a trace.
+    """
+    return memory_service.inspect_trace(trace_id)
 
 
 @router.get("/debug/trace/annotations")

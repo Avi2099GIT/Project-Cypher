@@ -50,6 +50,11 @@ export default function TraceInspectorApp() {
   // ---------- Metrics state ----------
   const [metrics, setMetrics] = useState<any>(null);
 
+  // ---------- Memory state ----------
+  const [memory, setMemory] = useState<any>(null);
+  const [memoryLoading, setMemoryLoading] = useState(false);
+
+
   // ---------- Filters ----------
   const [live, setLive] = useState(true);
   const [traceSearch, setTraceSearch] = useState("");
@@ -115,6 +120,30 @@ export default function TraceInspectorApp() {
         setPlanLoading(false);
       });
   }, [selectedTraceId]);
+
+
+  /* ======================== LOAD MEMORY ======================== */
+
+  useEffect(() => {
+    if (!selectedTraceId) return;
+
+    setMemoryLoading(true);
+
+    fetch(`http://127.0.0.1:8000/v1/assistant/debug/memory?trace_id=${selectedTraceId}`)
+      .then((r) => {
+        if (!r.ok) throw new Error("memory endpoint missing");
+        return r.json();
+      })
+      .then((json) => {
+        setMemory(json);
+        setMemoryLoading(false);
+      })
+      .catch(() => {
+        setMemory(null);          // ✅ backend not ready = silent fallback
+        setMemoryLoading(false);
+      });
+  }, [selectedTraceId]);
+
 
   /* ======================== LOAD METRICS ======================== */
 
@@ -599,6 +628,46 @@ export default function TraceInspectorApp() {
                   )}
                 </>
               )}
+
+              <hr />
+              <h3>Memory Inspector</h3>
+
+              {memoryLoading && <small>Loading memory…</small>}
+
+              {!memoryLoading && !memory && (
+                <small style={{ opacity: 0.6 }}>
+                  No memory available for this trace.
+                </small>
+              )}
+
+              {memory && (
+                <>
+                  <h4>Summary</h4>
+                  <pre style={jsonBox}>{JSON.stringify(memory.summary ?? memory, null, 2)}</pre>
+
+                  {memory.reads && (
+                    <>
+                      <h4>Reads</h4>
+                      <pre style={jsonBox}>{JSON.stringify(memory.reads, null, 2)}</pre>
+                    </>
+                  )}
+
+                  {memory.writes && (
+                    <>
+                      <h4>Writes</h4>
+                      <pre style={jsonBox}>{JSON.stringify(memory.writes, null, 2)}</pre>
+                    </>
+                  )}
+
+                  {memory.hits && (
+                    <>
+                      <h4>Hits</h4>
+                      <pre style={jsonBox}>{JSON.stringify(memory.hits, null, 2)}</pre>
+                    </>
+                  )}
+                </>
+              )}
+
             </>
           )}
         </Card>

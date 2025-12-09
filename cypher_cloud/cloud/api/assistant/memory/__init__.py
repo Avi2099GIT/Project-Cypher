@@ -354,6 +354,40 @@ class MemoryService:
             }
         )
 
+    def inspect_trace(self, trace_id: str):
+        """
+        Returns all memory entries associated with a trace_id
+        """
+        try:
+            # Case 1: episodic memory interface
+            if hasattr(self, "get_recent_episodes"):
+                episodes = self.get_recent_episodes(
+                    device={"device_id": "local-dev"}, limit=100
+                )
+
+            else:
+                return {"error": "Memory system does not expose an episodic interface"}
+
+            # Filter by trace_id in metadata if present
+            matched = [
+                e for e in episodes
+                if isinstance(e, dict)
+                and e.get("meta", {}).get("trace_id") == trace_id
+            ]
+
+            return {
+                "trace_id": trace_id,
+                "count": len(matched),
+                "episodes": matched,
+            }
+
+        except Exception as e:
+            return {
+                "trace_id": trace_id,
+                "error": str(e),
+            }
+
+
     def get_recent_episodes(
         self,
         device: Dict[str, Any],
