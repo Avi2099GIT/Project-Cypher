@@ -191,6 +191,10 @@ async def debug_plan(trace_id: str | None = None):
         "debug": plan_debug,
     }
 
+@router.get("/debug/metrics")
+def metrics():
+    return tracer.metrics()
+
 
 
 @router.get("/debug/trace/annotations")
