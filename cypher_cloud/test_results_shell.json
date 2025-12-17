@@ -1,0 +1,138 @@
+﻿{
+    "reply_text":  "[]",
+    "tools_used":  [
+
+                   ],
+    "memory_used":  {
+                        "recent_episodes":  [
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "[]",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "9166055c-9142-4327-8de8-dd544fe69f7c"
+                                                             },
+                                                    "created_at":  "2025-12-17T17:17:22Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Shell pip list | findstr mcp",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "9166055c-9142-4327-8de8-dd544fe69f7c"
+                                                             },
+                                                    "created_at":  "2025-12-17T17:17:22Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "[]",
+                                                    "meta":  {
+                                                                 "trace_id":  "63d103bd-1eee-4593-a940-cabb43fbdad1",
+                                                                 "tools_used":  [
+
+                                                                                ],
+                                                                 "verification":  {
+
+                                                                                  },
+                                                                 "suppress_for_reasoning":  false
+                                                             },
+                                                    "created_at":  "2025-12-17T17:17:22Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Shell pip list | findstr mcp",
+                                                    "meta":  {
+                                                                 "trace_id":  "63d103bd-1eee-4593-a940-cabb43fbdad1",
+                                                                 "tools_planned":  true,
+                                                                 "decision":  {
+                                                                                  "mode":  "tools",
+                                                                                  "use_tools":  true,
+                                                                                  "explanation":  "Reasoning decided tools are required.",
+                                                                                  "blocked":  false
+                                                                              },
+                                                                 "reasoning":  {
+                                                                                   "mode":  "force_tools",
+                                                                                   "confidence":  0.95,
+                                                                                   "needs_clarification":  false,
+                                                                                   "clarification_question":  null,
+                                                                                   "notes":  "Executing shell commands requires using a terminal tool."
+                                                                               }
+                                                             },
+                                                    "created_at":  "2025-12-17T17:17:22Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "[]",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "acad7ca5-70c2-4c2c-827b-922f4c46dada"
+                                                             },
+                                                    "created_at":  "2025-12-17T16:50:01Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Shell echo hello world",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "acad7ca5-70c2-4c2c-827b-922f4c46dada"
+                                                             },
+                                                    "created_at":  "2025-12-17T16:50:01Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "[]",
+                                                    "meta":  {
+                                                                 "trace_id":  "f4198102-a1dc-4e55-a361-574517791381",
+                                                                 "tools_used":  [
+
+                                                                                ],
+                                                                 "verification":  {
+
+                                                                                  },
+                                                                 "suppress_for_reasoning":  false
+                                                             },
+                                                    "created_at":  "2025-12-17T16:50:01Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Shell echo hello world",
+                                                    "meta":  {
+                                                                 "trace_id":  "f4198102-a1dc-4e55-a361-574517791381",
+                                                                 "tools_planned":  true,
+                                                                 "decision":  {
+                                                                                  "mode":  "tools",
+                                                                                  "use_tools":  true,
+                                                                                  "explanation":  "Reasoning decided tools are required.",
+                                                                                  "blocked":  false
+                                                                              },
+                                                                 "reasoning":  {
+                                                                                   "mode":  "force_tools",
+                                                                                   "confidence":  0.95,
+                                                                                   "needs_clarification":  false,
+                                                                                   "clarification_question":  null,
+                                                                                   "notes":  "Executing shell commands requires using a terminal tool."
+                                                                               }
+                                                             },
+                                                    "created_at":  "2025-12-17T16:50:00Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "[]",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "66c62fb7-72c8-40bd-afa8-e832f4ec8040"
+                                                             },
+                                                    "created_at":  "2025-12-17T16:48:52Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Shell echo hello world",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "66c62fb7-72c8-40bd-afa8-e832f4ec8040"
+                                                             },
+                                                    "created_at":  "2025-12-17T16:48:52Z"
+                                                }
+                                            ]
+                    }
+}

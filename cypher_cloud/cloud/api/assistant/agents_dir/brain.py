@@ -5,7 +5,7 @@ import logging
 
 from cloud.api.assistant.orchestrator.executor import GraphExecutor
 from cloud.api.assistant.orchestrator.cypher_graph import build_cypher_graph
-from cloud.api.assistant.memory import memory_service  # <-- NEW
+from cloud.api.assistant.memory import memory_service
 
 logger = logging.getLogger(__name__)
 
@@ -17,16 +17,9 @@ class CypherBrain:
     Orchestration:
         intent → entity → safety → reasoning → arbiter
         → planner → executor → verifier → chat
-
-    Memory:
-      - Each call to `process`:
-          * Stores the user message as an episode
-          * Stores the final assistant reply as an episode
-          * Attaches lightweight metadata (tools, decision, verification)
     """
 
     def __init__(self) -> None:
-        # Build Cypher execution graph
         self.graph = build_cypher_graph()
         self.executor = GraphExecutor(self.graph)
 
@@ -37,23 +30,19 @@ class CypherBrain:
         message: str,
         ctx: Dict[str, Any],
     ) -> Tuple[str, List[Dict[str, Any]]]:
-        """
-        Execute the full Cypher graph for a user message.
-
-        Returns:
-            (final_reply, tools_meta)
-        """
 
         device = ctx.get("device") or {"device_id": "local-dev"}
         history: List[Dict[str, Any]] = ctx.get("history") or []
 
         logger.info(
-            "CypherBrain processing message trace graph=%s device=%s",
+            "CypherBrain processing message graph=%s device=%s",
             self.graph.name,
             device.get("device_id") or device.get("id") or "unknown",
         )
 
+        # -------------------------------
         # Execute orchestration graph
+        # -------------------------------
         graph_ctx, tracer = await self.executor.run_query(
             message=message,
             history=history,
@@ -61,19 +50,27 @@ class CypherBrain:
             extras=ctx,
         )
 
-        # Extract core artifacts from graph context
+        # -------------------------------
+        # Extract artifacts
+        # -------------------------------
         final = graph_ctx.extras.get("final_reply")
         tools_meta = graph_ctx.extras.get("tool_result") or []
         decision = graph_ctx.extras.get("decision") or {}
         reasoning = graph_ctx.extras.get("reasoning") or {}
         verification = graph_ctx.extras.get("verification") or {}
 
+        # 🔧 FIX #1: correct key for planner presence
+        execution_plan = graph_ctx.extras.get("execution_plan")
+
         if not final:
-            logger.error("No final_reply produced by graph. Trace=%s", graph_ctx.trace_id)
-            final = "Something went wrong internally, but I am still running."
+            logger.error(
+                "No final_reply produced by graph. Trace=%s",
+                graph_ctx.trace_id,
+            )
+            final = str(tools_meta)
 
         # -------------------------------
-        # EPISODIC MEMORY: store turn
+        # EPISODIC MEMORY
         # -------------------------------
         try:
             # User episode
@@ -83,21 +80,23 @@ class CypherBrain:
                 content=message,
                 meta={
                     "trace_id": graph_ctx.trace_id,
-                    "tools_planned": bool(graph_ctx.extras.get("plan")),
+                    "tools_planned": bool(execution_plan),
                     "decision": decision,
                     "reasoning": reasoning,
                 },
             )
 
             # Assistant episode
-            # Assistant episode
             suppress_for_reasoning = False
 
-            # If any OS-control tool ran in this turn, mark this episode as
-            # something we should not treat as long-term “truth” for reasoning.
+            # 🔧 FIX #2: suppress ALL OS / MCP execution tools
             for t in tools_meta:
-                name = (t.get("tool") or "").lower()
-                if name == "os_control":
+                tool_name = (t.get("tool") or "").lower()
+
+                if (
+                    tool_name == "os_control"
+                    or tool_name.startswith("mcp:")
+                ):
                     suppress_for_reasoning = True
                     break
 
@@ -114,10 +113,11 @@ class CypherBrain:
             )
 
         except Exception:
-            # Memory failures must never break the main flow
-            logger.exception("Failed to store episodic memory for trace_id=%s", graph_ctx.trace_id)
+            logger.exception(
+                "Failed to store episodic memory for trace_id=%s",
+                graph_ctx.trace_id,
+            )
 
-        # Debug trace visibility (can be wired to dashboards later)
         logger.debug(
             "Execution trace %s → %s",
             graph_ctx.trace_id,

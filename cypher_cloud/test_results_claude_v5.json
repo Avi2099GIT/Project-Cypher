@@ -1,0 +1,115 @@
+﻿{
+    "reply_text":  "Please provide the necessary details or commands to connect to the Fetch MCP server.",
+    "tools_used":  [
+
+                   ],
+    "memory_used":  {
+                        "recent_episodes":  [
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "Please provide the necessary details or commands to connect to the Fetch MCP server.",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "89878f08-8bf7-41e7-a41d-95837b7c5d38"
+                                                             },
+                                                    "created_at":  "2025-12-17T18:12:31Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Ask Claude to say OK",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "89878f08-8bf7-41e7-a41d-95837b7c5d38"
+                                                             },
+                                                    "created_at":  "2025-12-17T18:12:31Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "Please provide the necessary details or commands to connect to the Fetch MCP server.",
+                                                    "meta":  {
+                                                                 "trace_id":  "3fb6fb3a-aeb1-4be5-b72c-915e805b09e8",
+                                                                 "tools_used":  [
+
+                                                                                ],
+                                                                 "verification":  {
+                                                                                      "ok":  true,
+                                                                                      "failed_tools":  ""
+                                                                                  },
+                                                                 "suppress_for_reasoning":  false
+                                                             },
+                                                    "created_at":  "2025-12-17T18:12:31Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Ask Claude to say OK",
+                                                    "meta":  {
+                                                                 "trace_id":  "3fb6fb3a-aeb1-4be5-b72c-915e805b09e8",
+                                                                 "tools_planned":  false,
+                                                                 "decision":  {
+                                                                                  "mode":  "chat_only",
+                                                                                  "use_tools":  false,
+                                                                                  "explanation":  "Reasoning decided tools are unnecessary.",
+                                                                                  "blocked":  false
+                                                                              },
+                                                                 "reasoning":  {
+                                                                                   "mode":  "chat_only",
+                                                                                   "confidence":  0.8,
+                                                                                   "needs_clarification":  false,
+                                                                                   "clarification_question":  null,
+                                                                                   "notes":  "The request to ask Claude to say OK does not require tools or further clarification."
+                                                                               }
+                                                             },
+                                                    "created_at":  "2025-12-17T18:12:31Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Lock my computer",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "a67ec66a-8aaf-4b93-ac48-770ca3756f40"
+                                                             },
+                                                    "created_at":  "2025-12-17T18:11:53Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Lock my computer",
+                                                    "meta":  {
+                                                                 "trace_id":  "0a7b5dfc-808e-4bd3-9208-9786f17b7c09",
+                                                                 "tools_planned":  true,
+                                                                 "decision":  {
+                                                                                  "mode":  "tools",
+                                                                                  "use_tools":  true,
+                                                                                  "explanation":  "Reasoning decided tools are required.",
+                                                                                  "blocked":  false
+                                                                              },
+                                                                 "reasoning":  {
+                                                                                   "mode":  "force_tools",
+                                                                                   "confidence":  0.95,
+                                                                                   "needs_clarification":  false,
+                                                                                   "clarification_question":  null,
+                                                                                   "notes":  "Locking the computer requires executing a command, which necessitates the use of tools."
+                                                                               }
+                                                             },
+                                                    "created_at":  "2025-12-17T18:11:53Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "You have successfully registered the MCP client \u0027time_remote\u0027. If you need to use its tools or have any other requests, let me know!",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "534e77e1-4a46-4d73-aca2-fd69ab9cb0e3"
+                                                             },
+                                                    "created_at":  "2025-12-17T18:09:59Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Connect to Time MCP server",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "534e77e1-4a46-4d73-aca2-fd69ab9cb0e3"
+                                                             },
+                                                    "created_at":  "2025-12-17T18:09:59Z"
+                                                }
+                                            ]
+                    }
+}

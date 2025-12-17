@@ -1,0 +1,139 @@
+﻿{
+    "reply_text":  "[]",
+    "tools_used":  [
+
+                   ],
+    "memory_used":  {
+                        "recent_episodes":  [
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "[]",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "66c62fb7-72c8-40bd-afa8-e832f4ec8040"
+                                                             },
+                                                    "created_at":  "2025-12-17T16:48:52Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Shell echo hello world",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "66c62fb7-72c8-40bd-afa8-e832f4ec8040"
+                                                             },
+                                                    "created_at":  "2025-12-17T16:48:52Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "[]",
+                                                    "meta":  {
+                                                                 "trace_id":  "04c26c98-0f4f-454a-be78-5360da280739",
+                                                                 "tools_used":  [
+
+                                                                                ],
+                                                                 "verification":  {
+
+                                                                                  },
+                                                                 "suppress_for_reasoning":  false
+                                                             },
+                                                    "created_at":  "2025-12-17T16:48:52Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Shell echo hello world",
+                                                    "meta":  {
+                                                                 "trace_id":  "04c26c98-0f4f-454a-be78-5360da280739",
+                                                                 "tools_planned":  true,
+                                                                 "decision":  {
+                                                                                  "mode":  "tools",
+                                                                                  "use_tools":  true,
+                                                                                  "explanation":  "Reasoning decided tools are required.",
+                                                                                  "blocked":  false
+                                                                              },
+                                                                 "reasoning":  {
+                                                                                   "mode":  "force_tools",
+                                                                                   "confidence":  0.9,
+                                                                                   "needs_clarification":  false,
+                                                                                   "clarification_question":  null,
+                                                                                   "notes":  "Executing shell commands requires using a terminal tool."
+                                                                               }
+                                                             },
+                                                    "created_at":  "2025-12-17T16:48:52Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "To list all Docker containers, you can use the following command in your terminal:\n\n```\ndocker ps -a\n```\n\nThis command will show all containers, including those that are stopped. If you need further assistance, let me know!",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "06eb020d-a035-4fa8-a662-fe053e48bc2c"
+                                                             },
+                                                    "created_at":  "2025-12-17T16:45:07Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "List all docker containers",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "06eb020d-a035-4fa8-a662-fe053e48bc2c"
+                                                             },
+                                                    "created_at":  "2025-12-17T16:45:07Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "To list all Docker containers, you can use the following command in your terminal:\n\n```\ndocker ps -a\n```\n\nThis command will show all containers, including those that are stopped. If you need further assistance, let me know!",
+                                                    "meta":  {
+                                                                 "trace_id":  "ecf56565-b135-4ab9-b72f-db72b24d1162",
+                                                                 "tools_used":  [
+
+                                                                                ],
+                                                                 "verification":  {
+                                                                                      "ok":  true,
+                                                                                      "failed_tools":  ""
+                                                                                  },
+                                                                 "suppress_for_reasoning":  false
+                                                             },
+                                                    "created_at":  "2025-12-17T16:45:07Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "List all docker containers",
+                                                    "meta":  {
+                                                                 "trace_id":  "ecf56565-b135-4ab9-b72f-db72b24d1162",
+                                                                 "tools_planned":  false,
+                                                                 "decision":  {
+                                                                                  "mode":  "tools",
+                                                                                  "use_tools":  true,
+                                                                                  "explanation":  "Reasoning decided tools are required.",
+                                                                                  "blocked":  false
+                                                                              },
+                                                                 "reasoning":  {
+                                                                                   "mode":  "force_tools",
+                                                                                   "confidence":  0.95,
+                                                                                   "needs_clarification":  false,
+                                                                                   "clarification_question":  null,
+                                                                                   "notes":  "Listing all docker containers requires using a tool to execute system commands."
+                                                                               }
+                                                             },
+                                                    "created_at":  "2025-12-17T16:45:07Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "I was unable to retrieve the page title for https://chatgpt.com/. If you need assistance with something else, please let me know.",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "f251e549-2142-4840-a9b4-b8341dbeeadb"
+                                                             },
+                                                    "created_at":  "2025-12-17T16:44:24Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Get the page title for https://chatgpt.com/",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "f251e549-2142-4840-a9b4-b8341dbeeadb"
+                                                             },
+                                                    "created_at":  "2025-12-17T16:44:24Z"
+                                                }
+                                            ]
+                    }
+}

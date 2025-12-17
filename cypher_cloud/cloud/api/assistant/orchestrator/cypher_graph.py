@@ -17,6 +17,8 @@ from cloud.api.assistant.agents_dir.memory_node import MemoryNode
 from cloud.api.assistant.orchestrator.failure_node import FailureNode
 from cloud.api.assistant.agents_dir.planner_agent_v2 import PlannerV2
 
+from cloud.api.assistant.mcp.models import MCPCallResult  # ✅ REQUIRED
+
 # Instantiate Phase-3 / Phase-4 agents
 planner_v2 = PlannerV2()
 memory_node_agent = MemoryNode()
@@ -35,9 +37,6 @@ failure_engine = FailureNode()
 # --------------------
 
 async def intent_node(ctx):
-    """
-    Parse user message into high-level intents.
-    """
     intents = await intent_agent.parse(ctx.message, ctx.history)
     ctx.extras["intents"] = intents
     return intents
@@ -62,9 +61,6 @@ def _filter_memory_for_chat(memory: dict) -> list:
 
 
 async def entity_node(ctx):
-    """
-    Enrich intents with entities / parameters.
-    """
     intents = ctx.extras.get("intents") or []
     enriched = entity_agent.enrich(intents, ctx.message, ctx.extras)
     ctx.extras["enriched_intents"] = enriched
@@ -72,9 +68,6 @@ async def entity_node(ctx):
 
 
 async def safety_node(ctx):
-    """
-    Run safety filter over enriched intents.
-    """
     enriched = ctx.extras.get("enriched_intents") or []
     safe_intents, blocked = safety_agent.filter(enriched)
 
@@ -88,109 +81,104 @@ async def safety_node(ctx):
 
 
 async def reasoning_node(ctx):
-    """
-    LLM reasoning layer:
-      - decide whether this is chat-only, tools-heavy, or needs clarification
-    """
-    intents = ctx.extras.get("intents") or []
-    enriched = ctx.extras.get("enriched_intents") or []
-    memory = ctx.extras.get("memory") or {}
-
     result = await reasoning_agent.run(
         ctx.message,
-        intents,
-        enriched,
+        ctx.extras.get("intents") or [],
+        ctx.extras.get("enriched_intents") or [],
         ctx.history,
-        memory,
+        ctx.extras.get("memory") or {},
     )
-
     ctx.extras["reasoning"] = result
     return result
 
 
 async def arbiter_node(ctx):
-    """
-    Combine safety + reasoning into a final decision.
-    """
-    safe_intents = ctx.extras.get("safe_intents") or []
-    blocked_intents = ctx.extras.get("blocked_intents") or []
-    reasoning = ctx.extras.get("reasoning") or {}
-
     decision = await arbiter_agent.run(
         ctx.message,
-        safe_intents,
-        blocked_intents,
-        reasoning,
+        ctx.extras.get("safe_intents") or [],
+        ctx.extras.get("blocked_intents") or [],
+        ctx.extras.get("reasoning") or {},
     )
     ctx.extras["decision"] = decision
     return decision
 
 
 async def planner_node(ctx):
-    """
-    Plan tool steps based on safe intents and arbitration decision.
-    """
-    decision: Dict[str, Any] = ctx.extras.get("decision") or {}
+    ctx.extras["message"] = ctx.message
+    decision = ctx.extras.get("decision") or {}
     mode = decision.get("mode")
 
     safe_intents = ctx.extras.get("safe_intents") or []
     if not safe_intents and mode == "safety_block":
-        # Nothing to plan, this will be handled by chat node
         ctx.extras["plan"] = []
         return {"status": "skipped", "reason": "safety_block"}
 
-    # Clarification-only and chat-only: do not plan tools
     if mode in ("clarify_only", "chat_only"):
         ctx.extras["plan"] = []
         return {"status": "skipped", "reason": f"mode={mode}"}
 
-    # Otherwise, normal planning
     candidates = planner_v2.generate_candidates(safe_intents, ctx.extras)
-
     if not candidates:
         ctx.extras["plan"] = []
         return {"status": "skipped", "reason": "no_plan"}
 
-    # ❌ OLD:
-    # best = planner_v2.pick_best(candidates)
-
-    # ✅ NEW:
     best = planner_v2.pick_best(candidates, ctx.extras)
-
     ctx.extras["execution_plan"] = best
-    ctx.extras["plan"] = [step.__dict__ for step in best.steps]
-
+    ctx.extras["execution_steps"] = best.steps
 
     return {
         "status": "ok",
-        "plan": best,
-        "selected_steps": ctx.extras["plan"],
+        "execution_steps": best.steps,   # ✅ REQUIRED
+        "selected_steps": [s.tool for s in best.steps],
     }
 
 
-
 async def executor_node(ctx):
-    """
-    Execute planned tool steps (if any).
-    """
-    plan = ctx.extras.get("plan") or []
-    if not plan:
+    steps = ctx.extras.get("execution_steps")
+
+    if steps is None:
+        ctx.extras["tool_result"] = []
+        return {"status": "skipped", "reason": "no_execution_steps"}
+
+    if not isinstance(steps, list):
+        raise RuntimeError(f"execution_steps must be list, got {type(steps)}")
+
+    if not steps:
         ctx.extras["tool_result"] = []
         return {"status": "skipped", "reason": "no_plan"}
 
-    # Old executor expected a context dict; rebuild from extras
     exec_ctx: Dict[str, Any] = dict(ctx.extras)
     exec_ctx["message"] = ctx.message
 
-    tools_meta = await executor_agent.run(plan, exec_ctx)
-    ctx.extras["tool_result"] = tools_meta
-    return {"status": "ok", "tools": tools_meta}
+    raw_results = await executor_agent.run(steps, exec_ctx)
+
+    normalized: List[Dict[str, Any]] = []
+
+    for r in raw_results or []:
+        if isinstance(r, MCPCallResult):
+            if r.success:
+                normalized.append({
+                    "tool": f"mcp:{r.tool}",
+                    "result": r.payload,
+                })
+            else:
+                normalized.append({
+                    "tool": f"mcp:{r.tool}",
+                    "error": r.error or "Unknown MCP error",
+                })
+            continue
+
+        if isinstance(r, dict):
+            normalized.append(r)
+            continue
+
+        raise RuntimeError(f"Unsupported tool result type: {type(r)}")
+
+    ctx.extras["tool_result"] = normalized
+    return {"status": "ok", "tools": normalized}
 
 
 async def verifier_node(ctx):
-    """
-    Verify tool results (if any).
-    """
     tools_meta = ctx.extras.get("tool_result") or []
     if not tools_meta:
         ctx.extras["verification"] = {"ok": True, "failed_tools": []}
@@ -200,9 +188,15 @@ async def verifier_node(ctx):
     ctx.extras["verification"] = verification
     return {"status": "ok", "verification": verification}
 
+
 async def failure_node(ctx):
     await failure_engine.handle(ctx)
     return {"status": "checked"}
+
+
+async def chat_node(ctx):
+    # unchanged — your implementation is already correct
+    ...
 
 
 async def chat_node(ctx):

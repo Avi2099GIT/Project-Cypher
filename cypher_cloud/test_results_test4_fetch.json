@@ -1,0 +1,138 @@
+﻿{
+    "reply_text":  "[]",
+    "tools_used":  [
+
+                   ],
+    "memory_used":  {
+                        "recent_episodes":  [
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "[]",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "5252cf1a-419f-4513-bd07-f19165895bc7"
+                                                             },
+                                                    "created_at":  "2025-12-17T17:47:28Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Connect to fetch mcp server and then Fetch https://example.com",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "5252cf1a-419f-4513-bd07-f19165895bc7"
+                                                             },
+                                                    "created_at":  "2025-12-17T17:47:28Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "[]",
+                                                    "meta":  {
+                                                                 "trace_id":  "a3f11869-e348-4829-b8fd-19994b30d0c4",
+                                                                 "tools_used":  [
+
+                                                                                ],
+                                                                 "verification":  {
+
+                                                                                  },
+                                                                 "suppress_for_reasoning":  false
+                                                             },
+                                                    "created_at":  "2025-12-17T17:47:28Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Connect to fetch mcp server and then Fetch https://example.com",
+                                                    "meta":  {
+                                                                 "trace_id":  "a3f11869-e348-4829-b8fd-19994b30d0c4",
+                                                                 "tools_planned":  true,
+                                                                 "decision":  {
+                                                                                  "mode":  "tools",
+                                                                                  "use_tools":  true,
+                                                                                  "explanation":  "Reasoning decided tools are required.",
+                                                                                  "blocked":  false
+                                                                              },
+                                                                 "reasoning":  {
+                                                                                   "mode":  "force_tools",
+                                                                                   "confidence":  0.95,
+                                                                                   "needs_clarification":  false,
+                                                                                   "clarification_question":  null,
+                                                                                   "notes":  "Connecting to the MCP server and fetching the URL requires executing commands through a terminal tool."
+                                                                               }
+                                                             },
+                                                    "created_at":  "2025-12-17T17:47:28Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "[]",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "24d76c05-61df-4290-8fbb-0c23b8d75019"
+                                                             },
+                                                    "created_at":  "2025-12-17T17:47:25Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Connect to Time MCP server and then tell me what time is it via time mcp",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "24d76c05-61df-4290-8fbb-0c23b8d75019"
+                                                             },
+                                                    "created_at":  "2025-12-17T17:47:25Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "[]",
+                                                    "meta":  {
+                                                                 "trace_id":  "bc68ace8-b7f8-4d93-b19c-0b919106fbe8",
+                                                                 "tools_used":  [
+
+                                                                                ],
+                                                                 "verification":  {
+
+                                                                                  },
+                                                                 "suppress_for_reasoning":  false
+                                                             },
+                                                    "created_at":  "2025-12-17T17:47:25Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Connect to Time MCP server and then tell me what time is it via time mcp",
+                                                    "meta":  {
+                                                                 "trace_id":  "bc68ace8-b7f8-4d93-b19c-0b919106fbe8",
+                                                                 "tools_planned":  true,
+                                                                 "decision":  {
+                                                                                  "mode":  "tools",
+                                                                                  "use_tools":  true,
+                                                                                  "explanation":  "Reasoning decided tools are required.",
+                                                                                  "blocked":  false
+                                                                              },
+                                                                 "reasoning":  {
+                                                                                   "mode":  "force_tools",
+                                                                                   "confidence":  0.95,
+                                                                                   "needs_clarification":  false,
+                                                                                   "clarification_question":  null,
+                                                                                   "notes":  "Connecting to the Time MCP server and retrieving the current time requires executing commands through a terminal tool."
+                                                                               }
+                                                             },
+                                                    "created_at":  "2025-12-17T17:47:25Z"
+                                                },
+                                                {
+                                                    "role":  "assistant",
+                                                    "content":  "[]",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "b9f118c6-1e83-4c98-9ba9-05ad48fd0d93"
+                                                             },
+                                                    "created_at":  "2025-12-17T17:47:20Z"
+                                                },
+                                                {
+                                                    "role":  "user",
+                                                    "content":  "Connect to SQLite MCP server and then run query SELECT 1 as test",
+                                                    "meta":  {
+                                                                 "source":  "api",
+                                                                 "trace_id":  "b9f118c6-1e83-4c98-9ba9-05ad48fd0d93"
+                                                             },
+                                                    "created_at":  "2025-12-17T17:47:20Z"
+                                                }
+                                            ]
+                    }
+}

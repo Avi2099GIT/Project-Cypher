@@ -230,11 +230,32 @@ def _parse_event_time(args: Dict[str, Any]) -> datetime | None:
 def _normalize_event(ev: Dict[str, Any]) -> Dict[str, Any]:
     start = ev.get("start", {}) or {}
     end = ev.get("end", {}) or {}
+    
+    start_dt_str = start.get("dateTime") or start.get("date")
+    end_dt_str = end.get("dateTime") or end.get("date")
+    
+    # Generate human readable string
+    # Try to parse the iso string to a datetime object for formatting
+    formatted = start_dt_str
+    try:
+        if start_dt_str:
+             if "T" in start_dt_str:
+                 dt = datetime.fromisoformat(start_dt_str)
+                 # e.g. Thursday, December 18 at 9:00 PM
+                 formatted = dt.strftime("%A, %B %d, %Y at %I:%M %p")
+             else:
+                 # It's a date (all day)
+                 dt = dt_date.fromisoformat(start_dt_str)
+                 formatted = dt.strftime("%A, %B %d, %Y")
+    except Exception:
+        pass
+
     return {
         "id": ev.get("id"),
         "title": ev.get("summary") or "Untitled event",
-        "start": start.get("dateTime") or start.get("date"),
-        "end": end.get("dateTime") or end.get("date"),
+        "start": start_dt_str,
+        "end": end_dt_str,
+        "formatted_date": formatted,
         "htmlLink": ev.get("htmlLink"),
         "eventType": ev.get("eventType", "default"),
     }
@@ -247,7 +268,20 @@ def _is_deletable_event(ev: Dict[str, Any]) -> bool:
     event_type = ev.get("eventType") or ev.get("kind")  # kind is usually 'calendar#event'
     if str(event_type).lower() == "birthday":
         return False
+        
+    summary = (ev.get("summary") or "").lower()
+    description = (ev.get("description") or "").lower()
+    
+    # Explicit user preference to ignore birthdays
+    if "birthday" in summary or "birthday" in description:
+        return False
+        
+    # Also ignore holidays if they appear as events
+    if "holiday" in summary:
+        return False
+        
     return True
+
 
 
 # -------------------------------------------------------------------
@@ -352,6 +386,7 @@ async def calendar_google_tool(args: Dict[str, Any], ctx: dict) -> Dict[str, Any
                 "title": created_norm["title"],
                 "start": created_norm["start"],
                 "end": created_norm["end"],
+                "formatted_date": created_norm.get("formatted_date"),
                 "htmlLink": created_norm["htmlLink"],
             }
         except Exception as e:

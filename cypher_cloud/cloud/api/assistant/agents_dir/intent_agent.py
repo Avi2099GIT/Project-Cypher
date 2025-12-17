@@ -70,13 +70,23 @@ class IntentAgent:
                 }
             ]
 
+        # --- Notes ---
+        if self._looks_like_notes(lower):
+            return [
+                {
+                    "type": "notes",
+                    "priority": 1,
+                    "params": {},
+                }
+            ]
+
         # --- Task / todo / non-calendar reminders ---
         # NOTE: we deliberately do NOT include "remind me" here, so that
         #       "remind me at 7pm" still routes to calendar, as you had before.
         if self._looks_like_task(lower):
             return [
                 {
-                    "type": "task",
+                    "type": "tasks",
                     "priority": 1,
                     "params": {},
                 }
@@ -113,7 +123,7 @@ class IntentAgent:
         if self._looks_like_os(lower):
             return [
                 {
-                    "type": "os",
+                    "type": "os_control",
                     "priority": 1,
                     "params": {
                         "raw_message": message,
@@ -125,7 +135,7 @@ class IntentAgent:
         if self._looks_like_web(lower):
             return [
                 {
-                    "type": "web",
+                    "type": "web_search",
                     "priority": 1,
                     "params": {
                         "raw_message": message,
@@ -184,6 +194,28 @@ class IntentAgent:
             ):
                 return True
 
+        return False
+
+    def _looks_like_notes(self, lower: str) -> bool:
+        """
+        Notes / memory keywords.
+        """
+        note_keywords = [
+            "note",
+            "notes",
+            "remember to",
+            "remember that",
+            "memo",
+        ]
+        
+        # Avoid conflict with tasks "add to my todo" vs "add note"
+        # but usually "note" is strong enough.
+        if "note" in lower or "memo" in lower:
+            return True
+        
+        if lower.startswith("remember"):
+            return True
+            
         return False
 
     def _looks_like_task(self, lower: str) -> bool:

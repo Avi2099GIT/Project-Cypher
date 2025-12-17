@@ -1,6 +1,16 @@
-# cypher_cloud/main.py
+import sys
+import asyncio
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+# Force Reload Trigger 2025-12-18 00:45
+import os
+from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
+# Load from parent directory (cypher_edge_runtime/.env)
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 from fastapi import FastAPI
 from cloud.api.assistant.router import router as assistant_router
 

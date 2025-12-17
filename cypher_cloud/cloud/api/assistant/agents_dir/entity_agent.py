@@ -47,7 +47,6 @@ class EntityAgent:
                 elif "clear" in lower or "delete all notes" in lower:
                     params.setdefault("action", "clear")
 
-                    
                 else:
                     params.setdefault("action", "add")
                     params.setdefault(
@@ -95,7 +94,7 @@ class EntityAgent:
                     )
 
                 # IMPORTANT SWITCH
-                intent["type"] = "google_tasks"
+                itype = "google_tasks"
 
             # -------- CALENDAR (Google) -----
             elif itype == "calendar":
@@ -135,15 +134,23 @@ class EntityAgent:
                 if is_list:
                     params.setdefault("action", "list")
 
-                elif "clear calendar" in lower or "delete all events" in lower:
-                    # Dangerous, keep as a special case (we still don't use Google clear-all)
-                    params.setdefault("action", "clear")
+                if is_list:
+                    params.setdefault("action", "list")
 
-                elif "delete" in lower or "cancel" in lower:
+                elif any(kw in lower for kw in ["clear", "delete", "remove", "cancel"]):
                     params.setdefault("action", "delete")
+                    # If specific event ID not found, it implies bulk delete by range (handled by tool)
                     m = re.search(r"(event\s+)?([a-z0-9_\-]{8,})", lower)
                     if m:
                         params.setdefault("event_id", m.group(2))
+                    
+                    # Ensure range fields are extracted for bulk clear
+                    title_dummy, time_hint = self._extract_calendar_fields(message)
+                    if time_hint:
+                        params.setdefault("when", time_hint)
+                    params.setdefault("raw_message", message)
+
+                # ---- RESCHEDULE ----
 
                 # ---- RESCHEDULE ----
                 elif "reschedule" in lower or "move" in lower:
@@ -216,27 +223,113 @@ class EntityAgent:
 
     def _extract_calendar_fields(self, message: str) -> Tuple[str | None, str | None]:
         """
-        Extremely naive calendar extraction.
-        e.g. 'Schedule meeting tomorrow at 6 PM'
-        -> title='meeting', time_hint='tomorrow at 6 PM'
+        Smart calendar extraction using dateutil.
+        Splits message into title (text) and when (date/time).
         """
+        try:
+            from dateutil import parser as date_parser
+            
+            # fuzzy_with_tokens returns (datetime_obj, tokens_tuple)
+            # tokens_tuple contains the parts of the string that were NOT parsed as date
+            _, tokens = date_parser.parse(message, fuzzy_with_tokens=True)
+            
+            # Reconstruct title from non-date tokens
+            # tokens is a tuple of strings that were skipped
+            title_candidates = []
+            for t in tokens:
+                t = t.strip(" ,.-:")
+                if not t:
+                    continue
+                # Skip meaningless connecting words common in requests
+                if t.lower() in ("schedule", "a", "meeting", "event", "on", "at", "for", "with", "create", "book"):
+                    continue
+                title_candidates.append(t)
+            
+            title = " ".join(title_candidates).strip()
+            
+            # The 'when' is effectively the whole message, trusting the tool 
+            # to re-parse it with the context of the title removed or just passing raw.
+            # However, a better pattern is: pass the whole raw message as 'when' 
+            # if we are confident, OR just return None for title/time and let the tool handle raw_message.
+            
+            # Since the Tool prefers 'when' arg if present:
+            # We can reconstruct the "date part" by removing tokens from message? Hard.
+            # Simpler: just pass the raw message as 'when' (time hint) 
+            # BUT we need to extract a TITLE.
+            
+            if not title:
+                title = "Meeting"
+                
+            # If dateutil found a date, we can just pass the original string as the time hint
+            # because the tool will parse it again. The value add here is separating the Title.
+            # But wait, if we pass 'message' as 'when', the tool might think the Title is part of the date? 
+            # (Unlikely for "meeting", but possible for "March").
+            
+            # Actually, `dateutil` doesn't give us the SUBSTRING that matched. 
+            # It gives us the parsed object.
+            
+            # Let's revert to a slightly smarter regex approach combined with valid fallback.
+            # Ideally we want to identify the date string position.
+            pass
+        except ImportError:
+            pass
+        except Exception:
+            pass
+
+        # --- Improved Regex Approach ---
+        # Capture "on <date expression>" or "at <time expression>" or relative words
+        # and assume everything else is title.
+        
         lower = message.lower()
-        title = None
-        time_hint = None
+        
+        # Regex to capture time hints:
+        # 1. "on 18th Dec..."
+        # 2. "today", "tomorrow", "next friday"
+        # 3. "at 9pm", "from 9 to 10"
+        
+        # We try to find the START of the time expression.
+        # Common prepositions: on, at, from, by, due, in
+        # Keywords: today, tomorrow, yesterday, next, this
+        
+        time_triggers = [
+            r"\bon\s+(?:\w+\s*)+",       # on 18th dec 2025
+            r"\bat\s+[\d:]+\s*(?:am|pm)?", # at 9pm
+            r"\btoday\b",
+            r"\btomorrow\b",
+            r"\btonight\b",
+            r"\bnext\s+\w+",             # next week/friday
+            r"\bthis\s+\w+",             # this weekend
+            r"\bin\s+\d+\s+(?:min|hour|day)s?",
+        ]
+        
+        # We want to match the *first* occurrence of any of these, and assume
+        # everything from there on is the "when" part (a simplification, but works for "Title on Date").
+        # Many users say "Schedule Title on Date".
+        
+        earliest_idx = len(message)
+        found_match = False
+        
+        for pattern in time_triggers:
+            try:
+                # We want the start index of the match
+                for m in re.finditer(pattern, lower):
+                     if m.start() < earliest_idx:
+                         earliest_idx = m.start()
+                         found_match = True
+                     # We only care about the first relevant time marker
+                     break 
+            except Exception:
+                continue
 
-        m = re.search(
-            r"(today|tomorrow|tonight|on\s+\w+)?\s*(at\s+[0-9: ]+(am|pm)?)",
-            lower,
-        )
-        if m:
-            time_hint = m.group(0).strip()
+        if found_match:
+            title_part = message[:earliest_idx].strip(" ,.-")
+            when_part = message[earliest_idx:].strip()
+            
+            # Clean title
+            for prefix in ["schedule a", "schedule", "create a", "create", "book a", "book", "add", "meeting", "event"]:
+                if title_part.lower().startswith(prefix):
+                    title_part = title_part[len(prefix):].strip()
+                    
+            return (title_part or None, when_part)
 
-        for kw in ["event", "meeting", "call"]:
-            if kw in lower:
-                idx = lower.index(kw) + len(kw)
-                title = message[idx:].strip(" :-.,")
-                if time_hint and time_hint in title.lower():
-                    title = title.lower().replace(time_hint, "").strip(" :-.,")
-                break
-
-        return (title or None, time_hint or None)
+        return (None, None)

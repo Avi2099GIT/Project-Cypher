@@ -33,11 +33,11 @@ class ReasoningAgent:
     def __init__(self, model: str = OPENAI_MODEL_CHAT) -> None:
         self.model = model
 
+    # ---------------------------------------------------------
+    # MEMORY FILTERING (UNCHANGED)
+    # ---------------------------------------------------------
+
     def _filter_memory_episodes(self, memory) -> list:
-        """
-        Filter out noisy/sensitive episodes from memory, especially ones that
-        should not be treated as long-term 'truth' (like OS lock messages).
-        """
         episodes = (memory or {}).get("recent_episodes", [])
 
         filtered = []
@@ -45,12 +45,9 @@ class ReasoningAgent:
             meta = ep.get("meta") or {}
             content = (ep.get("content") or "").lower()
 
-            # Respect explicit suppression flag from brain.py
             if meta.get("suppress_for_reasoning"):
                 continue
 
-            # Also defensively drop any obviously OS-lock-y text,
-            # in case older episodes don't have the meta flag.
             if "your computer is now locked" in content:
                 continue
             if "computer is currently locked" in content:
@@ -60,6 +57,43 @@ class ReasoningAgent:
 
         return filtered
 
+    # ---------------------------------------------------------
+    # EXECUTION INTENT DETECTION (NEW, CRITICAL)
+    # ---------------------------------------------------------
+
+    def _looks_like_execution(self, message: str) -> bool:
+        """
+        Detects imperative execution intent where tools are REQUIRED,
+        even if the LLM is unavailable.
+        """
+        msg = message.lower().strip()
+
+        imperative_prefixes = (
+            "run ",
+            "execute ",
+            "exec ",
+            "open ",
+            "list ",
+            "show ",
+            "delete ",
+            "remove ",
+            "create ",
+            "kill ",
+            "start ",
+            "stop ",
+        )
+
+        if msg.startswith(imperative_prefixes):
+            return True
+
+        if "run command" in msg or "execute command" in msg:
+            return True
+
+        return False
+
+    # ---------------------------------------------------------
+    # MAIN ENTRY
+    # ---------------------------------------------------------
 
     async def run(
         self,
@@ -69,7 +103,7 @@ class ReasoningAgent:
         history: List[Dict[str, Any]],
         memory,
     ) -> Dict[str, Any]:
-        # Compact history for context (but keep it small)
+
         history_snippets = [
             f"{h.get('role', 'user')}: {h.get('content', '')}"
             for h in history[-5:]
@@ -91,11 +125,9 @@ class ReasoningAgent:
             "- auto_tools: let the planner decide and run tools if helpful.\n"
             "- chat_only: just answer conversationally; tools are unnecessary.\n"
             "- clarify_only: DO NOT answer or run tools; Cypher must ask a clarifying question.\n"
-            "- force_tools: tools are essential (e.g., calendar, tasks, system state, web).\n"
-            "You MUST NOT assume that the user's computer is currently locked or unlocked "
-            "based only on past conversation. If the user says the computer is unlocked, "
-            "you must treat it as unlocked and you must NOT keep asking for confirmation "
-            "about the lock state.\n"
+            "- force_tools: tools are essential (e.g., calendar, tasks, system state, web, weather).\n"
+            "You MUST NOT assume computer lock state from past memory.\n"
+            "If the user asks for real-time information (weather, stocks, news) or personal data (calendar, tasks), you MUST choose 'force_tools' or 'auto_tools'. Do NOT use 'chat_only'.\n"
         )
 
         filtered_episodes = self._filter_memory_episodes(memory)
@@ -112,12 +144,15 @@ class ReasoningAgent:
             indent=2,
         )
 
-
         raw = await _call_openai_chat(
             prompt=user_prompt,
             system_prompt=system_prompt,
             model=self.model,
         )
+
+        # -------------------------
+        # LLM FAILURE → HEURISTICS
+        # -------------------------
 
         if not raw or raw.startswith("LLM ERROR"):
             logger.warning("ReasoningAgent LLM failed, raw=%r", raw)
@@ -129,7 +164,6 @@ class ReasoningAgent:
             logger.warning("ReasoningAgent JSON parse failed, raw=%r", raw)
             return self._fallback_decision(message, intents)
 
-        # Basic normalisation
         mode = data.get("mode") or "auto_tools"
         if mode not in ("auto_tools", "chat_only", "clarify_only", "force_tools"):
             mode = "auto_tools"
@@ -154,23 +188,44 @@ class ReasoningAgent:
             "notes": notes,
         }
 
+    # ---------------------------------------------------------
+    # FALLBACK (UPDATED, SAFE)
+    # ---------------------------------------------------------
+
     def _fallback_decision(
         self,
         message: str,
         intents: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """
-        Heuristic backup if the LLM fails.
+        Deterministic heuristic fallback if the LLM fails.
+        This MUST allow OS / MCP execution.
         """
         lower = message.lower()
+        if "time" in lower:
+            return {
+                "mode": "force_tools",
+                "confidence": 0.95,
+                "needs_clarification": False,
+                "clarification_question": None,
+                "notes": "time_requires_tool_override",
+            }
 
-        # Very simple heuristics
+        # 🔴 CRITICAL FIX: execution intent bypasses LLM
+        if self._looks_like_execution(message):
+            return {
+                "mode": "force_tools",
+                "confidence": 0.95,
+                "needs_clarification": False,
+                "clarification_question": None,
+                "notes": "imperative_execution_detected_fallback",
+            }
+
         if any(k in lower for k in ["what time", "weather", "temperature", "forecast"]):
             mode = "force_tools"
         elif any(k in lower for k in ["schedule", "calendar", "event", "meeting", "reminder"]):
             mode = "force_tools"
         else:
-            # If only chat intent, prefer chat_only
             if len(intents) == 1 and intents[0].get("type") == "chat":
                 mode = "chat_only"
             else:

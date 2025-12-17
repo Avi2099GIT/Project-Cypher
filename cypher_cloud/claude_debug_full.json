@@ -1,0 +1,163 @@
+{
+    "reply_text": "There is currently an issue with connecting to Claude. Please try again later or let me know if you need assistance with something else.\n\n(Note: some tools failed internally: claude.ask. I still returned what I could.)",
+    "tools_used": [
+        {
+            "tool": "claude.ask",
+            "error": "Client error '404 Not Found' for url 'https://api.anthropic.com/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+            "type": "mcp_error",
+            "fallback_from_mcp": false
+        }
+    ],
+    "memory_used": {
+        "recent_episodes": [
+            {
+                "role": "assistant",
+                "content": "There is currently an issue with connecting to Claude. Please try again later or let me know if you need assistance with something else.\n\n(Note: some tools failed internally: claude.ask. I still returned what I could.)",
+                "meta": {
+                    "source": "api",
+                    "trace_id": "83244a02-b675-4cab-b90c-21b45ec1951c"
+                },
+                "created_at": "2025-12-17T18:28:25Z"
+            },
+            {
+                "role": "user",
+                "content": "Ask Claude to say OK",
+                "meta": {
+                    "source": "api",
+                    "trace_id": "83244a02-b675-4cab-b90c-21b45ec1951c"
+                },
+                "created_at": "2025-12-17T18:28:25Z"
+            },
+            {
+                "role": "assistant",
+                "content": "There is currently an issue with connecting to Claude. Please try again later or let me know if you need assistance with something else.\n\n(Note: some tools failed internally: claude.ask. I still returned what I could.)",
+                "meta": {
+                    "trace_id": "abf75889-c416-4bd6-91b6-1bf47e59b3b9",
+                    "tools_used": [
+                        {
+                            "tool": "claude.ask",
+                            "error": "Client error '404 Not Found' for url 'https://api.anthropic.com/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+                            "type": "mcp_error",
+                            "fallback_from_mcp": false
+                        }
+                    ],
+                    "verification": {
+                        "ok": false,
+                        "failed_count": 1,
+                        "failed_tools": [
+                            "claude.ask"
+                        ],
+                        "verified_outputs": []
+                    },
+                    "suppress_for_reasoning": false
+                },
+                "created_at": "2025-12-17T18:28:25Z"
+            },
+            {
+                "role": "user",
+                "content": "Ask Claude to say OK",
+                "meta": {
+                    "trace_id": "abf75889-c416-4bd6-91b6-1bf47e59b3b9",
+                    "tools_planned": true,
+                    "decision": {
+                        "mode": "tools",
+                        "use_tools": true,
+                        "explanation": "Reasoning decided tools are required.",
+                        "blocked": false
+                    },
+                    "reasoning": {
+                        "mode": "force_tools",
+                        "confidence": 0.95,
+                        "needs_clarification": false,
+                        "clarification_question": null,
+                        "notes": "The request to ask Claude to say OK requires interaction with the MCP server, which has been experiencing connection issues."
+                    }
+                },
+                "created_at": "2025-12-17T18:28:25Z"
+            },
+            {
+                "role": "assistant",
+                "content": "It seems there is a persistent issue connecting to the MCP server. Please check your connection settings or try again later. If you have other tasks or questions, let me know!\n\n(Note: some tools failed internally: claude.ask. I still returned what I could.)",
+                "meta": {
+                    "source": "api",
+                    "trace_id": "03dd6cef-d8e7-458a-bd1b-8a9cdd9375a0"
+                },
+                "created_at": "2025-12-17T18:27:20Z"
+            },
+            {
+                "role": "user",
+                "content": "Ask Claude to say OK",
+                "meta": {
+                    "source": "api",
+                    "trace_id": "03dd6cef-d8e7-458a-bd1b-8a9cdd9375a0"
+                },
+                "created_at": "2025-12-17T18:27:20Z"
+            },
+            {
+                "role": "assistant",
+                "content": "It seems there is a persistent issue connecting to the MCP server. Please check your connection settings or try again later. If you have other tasks or questions, let me know!\n\n(Note: some tools failed internally: claude.ask. I still returned what I could.)",
+                "meta": {
+                    "trace_id": "71e76c05-9521-4147-b80b-e77b17e24d8d",
+                    "tools_used": [
+                        {
+                            "tool": "claude.ask",
+                            "error": "Client error '404 Not Found' for url 'https://api.anthropic.com/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+                            "type": "mcp_error",
+                            "fallback_from_mcp": false
+                        }
+                    ],
+                    "verification": {
+                        "ok": false,
+                        "failed_count": 1,
+                        "failed_tools": [
+                            "claude.ask"
+                        ],
+                        "verified_outputs": []
+                    },
+                    "suppress_for_reasoning": false
+                },
+                "created_at": "2025-12-17T18:27:20Z"
+            },
+            {
+                "role": "user",
+                "content": "Ask Claude to say OK",
+                "meta": {
+                    "trace_id": "71e76c05-9521-4147-b80b-e77b17e24d8d",
+                    "tools_planned": true,
+                    "decision": {
+                        "mode": "tools",
+                        "use_tools": true,
+                        "explanation": "Reasoning decided tools are required.",
+                        "blocked": false
+                    },
+                    "reasoning": {
+                        "mode": "force_tools",
+                        "confidence": 0.95,
+                        "needs_clarification": false,
+                        "clarification_question": null,
+                        "notes": "The request to ask Claude to say OK may require interaction with the MCP server, which has been experiencing connection issues."
+                    }
+                },
+                "created_at": "2025-12-17T18:27:20Z"
+            },
+            {
+                "role": "assistant",
+                "content": "There is a persistent issue connecting to the MCP server. Please check your connection settings or try again later. If you have other tasks or questions, let me know!",
+                "meta": {
+                    "source": "api",
+                    "trace_id": "80a4fa7e-8b4f-4418-a620-fb6f9f4fc9ee"
+                },
+                "created_at": "2025-12-17T18:27:14Z"
+            },
+            {
+                "role": "user",
+                "content": "Connect to SQLite MCP server using name sqlite_verify_final_2",
+                "meta": {
+                    "source": "api",
+                    "trace_id": "80a4fa7e-8b4f-4418-a620-fb6f9f4fc9ee"
+                },
+                "created_at": "2025-12-17T18:27:14Z"
+            }
+        ]
+    }
+}
