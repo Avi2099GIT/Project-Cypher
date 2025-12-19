@@ -229,7 +229,7 @@ Server runs at: `http://localhost:8000`
 
 ## 📜 License
 
-MIT (or your preferred license)
+Feel free to use it!! :)
 
 > **⭐ Final Note:** Project Cypher is not a chatbot. It is an AI Operating System designed for real-world control, automation, and intelligence — with the rigor required for production systems.
 
