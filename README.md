@@ -1,300 +1,240 @@
-Project Cypher 🧠⚙️
+Here is the raw Markdown code. You can copy this directly into a file named `README.md`.
+
+```markdown
+# Project Cypher 🧠⚙️
+
+### An AI Operating System for Real-World Execution, Automation, and Intelligence
+
+**Project Cypher** is a production-oriented **AI Operating System (AI-OS)** that bridges natural language, reasoning, and real-world execution across local systems, cloud services, browsers, CI/CD, and external AI models.
+
+Unlike traditional chatbots, Cypher is designed as an **execution-first**, introspectable, multi-agent system with strong guarantees around safety, traceability, and extensibility.
+
+---
+
+## 🔥 Core Philosophy
+
+**`Intent` → `Reasoning` → `Planning` → `Execution` → `Verification` → `Memory`**
+
+Cypher is not a single agent. It is a **coordinated AI system** with explicit control over:
+* **What** should be done
+* **Why** it should be done
+* **How** it is executed
+* **Whether** it succeeded
+
+---
+
+## 🚀 Features & Status
+
+### ✅ Phase 0 — Edge Foundations
+*Low-level audio and signal processing pipeline.*
+- [x] Wake-word detection
+- [x] Voice Activity Detection (VAD)
+- [x] Audio normalization & trimming
+- [x] Offline ASR support (Whisper.cpp compatible)
+- [x] Modular edge runtime
+
+### ✅ Phase 1 — Core Intelligence Loop
+*Natural language understanding and system orchestration.*
+- [x] Reasoning agent (LLM-based + heuristic fallback)
+- [x] Deterministic mode selection (`chat_only`, `auto_tools`, `force_tools`, `clarify_only`)
+- [x] Safety-aware decision gating
+- [x] Execution context propagation
+
+### ✅ Phase 2 — Planning & Execution Engine
+*From intent to real actions.*
+- [x] PlannerV2 (deterministic, hardened)
+- [x] Multi-step execution plans
+- [x] Local tool execution (OS, web, utilities)
+- [x] Executor with strict failure semantics
+- [x] Automatic fallback from MCP → local tools
+- [x] Structured execution results
+
+### ✅ Phase 3 — Memory, Tracing & Observability
+*Full introspection into system behavior.*
+- [x] Episodic memory (per device / session)
+- [x] Trace IDs for every request
+- [x] Execution graphs with node status
+- [x] Failure maps & slow-node detection
+- [x] Debug endpoints for plans, memory, traces
+
+### ✅ Phase 4 — MCP Integration (Native)
+*Enterprise-grade extensibility via native MCP servers.*
+- [x] Native MCP client registry
+- [x] Multiple MCP backends supported: Shell, Docker, GitHub, Playwright (browser automation), Claude / LLM MCP
+- [x] Runtime MCP availability probing
+- [x] Unified metrics for MCP calls
+
+> **⚠️ Note:** MCP is implemented using **native MCP servers**, not Docker-wrapped MCP.
+
+### 🎙️ Voice System Status
+* **Status:** Temporarily Disabled / Hooks Only
+* **Details:** Voice pipeline (wake, VAD, ASR, TTS hooks) is implemented but **NOT** wired into the current dev workflow.
+* **Strategy:** Development is currently text-first. Voice will be re-enabled in a future phase once core automation stabilizes.
+
+---
+
+## 🧩 System Architecture
+
+```mermaid
+graph TD
+    User[User Input] --> Reasoning[ReasoningAgent]
+    Reasoning --> Arbiter[Arbiter / Safety]
+    Arbiter --> Planner[PlannerV2]
+    Planner --> Executor[ExecutorAgent]
+    
+    Executor --> Local[Local Tools]
+    Executor --> MCP[Native MCP Servers]
+    
+    Local --> Verifier
+    MCP --> Verifier
+    
+    Verifier --> Memory[Memory + Tracing]
+
+```
+
+### 🛠️ Tech Stack
+
+| Component | Technologies |
+| --- | --- |
+| **Backend** | Python 3.10+, FastAPI, AsyncIO |
+| **AI / LLM** | OpenAI (optional), Anthropic Claude (via Native MCP), Deterministic Fallbacks |
+| **Automation** | Native MCP Servers, OS Automation, Playwright MCP, GitHub CI |
+| **Observability** | Custom Tracer, Execution Graphs, Metrics & Diagnostics APIs |
 
-An AI Operating System for Real-World Execution, Automation, and Intelligence
+---
 
-Project Cypher is a production-oriented AI Operating System (AI-OS) that bridges natural language, reasoning, and real-world execution across local systems, cloud services, browsers, CI/CD, and external AI models.
+## 📁 Project Structure
 
-Unlike traditional chatbots, Cypher is designed as an execution-first, introspectable, multi-agent system with strong guarantees around safety, traceability, and extensibility.
-
-🔥 Core Philosophy
-
-Intent → Reasoning → Planning → Execution → Verification → Memory
-
-Cypher is not a single agent.
-It is a coordinated AI system with explicit control over:
-
-what should be done
-
-why it should be done
-
-how it is executed
-
-whether it succeeded
-
-🚀 Features Overview (Phase 0 → Phase 4)
-✅ Phase 0 — Edge Foundations
-
-Low-level audio and signal processing pipeline.
-
-Wake-word detection
-
-Voice Activity Detection (VAD)
-
-Audio normalization & trimming
-
-Offline ASR support (Whisper.cpp compatible)
-
-Modular edge runtime
-
-✔️ Status: Completed
-
-✅ Phase 1 — Core Intelligence Loop
-
-Natural language understanding and system orchestration.
-
-Reasoning agent (LLM-based + heuristic fallback)
-
-Deterministic mode selection:
-
-chat_only
-
-auto_tools
-
-force_tools
-
-clarify_only
-
-Safety-aware decision gating
-
-Execution context propagation
-
-✔️ Status: Completed
-
-✅ Phase 2 — Planning & Execution Engine
-
-From intent to real actions.
-
-PlannerV2 (deterministic, hardened)
-
-Multi-step execution plans
-
-Local tool execution (OS, web, utilities)
-
-Executor with strict failure semantics
-
-Automatic fallback from MCP → local tools
-
-Structured execution results
-
-✔️ Status: Completed
-
-✅ Phase 3 — Memory, Tracing & Observability
-
-Full introspection into system behavior.
-
-Episodic memory (per device / session)
-
-Trace IDs for every request
-
-Execution graphs with node status
-
-Failure maps & slow-node detection
-
-Debug endpoints for plans, memory, traces
-
-✔️ Status: Completed
-
-✅ Phase 4 — MCP Integration (Native)
-
-Enterprise-grade extensibility via native MCP servers.
-
-Native MCP client registry
-
-Multiple MCP backends supported:
-
-Shell
-
-Docker
-
-GitHub
-
-Playwright (browser automation)
-
-Claude / LLM MCP
-
-Runtime MCP availability probing
-
-Safe fallback to local tools if MCP unavailable
-
-Unified metrics for MCP calls
-
-✔️ Status: Completed
-⚠️ Note: MCP is implemented using native MCP servers, not Docker-wrapped MCP.
-
-🎙️ Voice System Status
-
-Voice pipeline (wake, VAD, ASR, TTS hooks) is implemented
-
-Voice is NOT wired into the current dev workflow
-
-Development and testing are currently text-first
-
-Voice will be re-enabled in a future phase once core automation stabilizes.
-
-🧩 System Architecture
-User Input
-   ↓
-ReasoningAgent
-   ↓
-Arbiter / Safety
-   ↓
-PlannerV2
-   ↓
-ExecutorAgent
-   ├── Local Tools
-   └── Native MCP Servers
-   ↓
-Verifier
-   ↓
-Memory + Tracing
-
-🛠️ Tech Stack
-
-Backend
-
-Python 3.10+
-
-FastAPI
-
-AsyncIO
-
-AI / LLM
-
-OpenAI (optional)
-
-Anthropic Claude (via native MCP)
-
-Deterministic fallback logic (no LLM dependency for execution)
-
-Automation
-
-Native MCP servers
-
-OS automation
-
-Browser automation (Playwright MCP)
-
-GitHub & CI integration
-
-Observability
-
-Custom tracer
-
-Execution graphs
-
-Metrics & diagnostics APIs
-
-📁 Project Structure (Simplified)
+```text
 cloud/
 └── api/
-    └── assistant/
-        ├── agents_dir/
-        │   ├── reasoning_agent.py
-        │   ├── planner_agent_v2.py
-        │   ├── executor_agent.py
-        │   └── brain.py
-        ├── orchestrator/
-        │   ├── cypher_graph.py
-        │   ├── tracer.py
-        │   └── node.py
-        ├── mcp/
-        │   ├── registry.py
-        │   ├── mcp_client_base.py
-        │   └── errors.py
-        ├── tools_registry.py
-        ├── tools_base.py
-        └── router.py
+    ├── assistant/
+    │   ├── agents_dir/
+    │   │   ├── reasoning_agent.py
+    │   │   ├── planner_agent_v2.py
+    │   │   ├── executor_agent.py
+    │   │   └── brain.py
+    │   ├── orchestrator/
+    │   │   ├── cypher_graph.py
+    │   │   ├── tracer.py
+    │   │   └── node.py
+    │   ├── mcp/
+    │   │   ├── registry.py
+    │   │   ├── mcp_client_base.py
+    │   │   └── errors.py
+    │   ├── tools_registry.py
+    │   ├── tools_base.py
+    │   └── router.py
 
-▶️ Getting Started
-1️⃣ Prerequisites
+```
 
-Python 3.10+
+---
 
-Virtual environment recommended
+## ▶️ Getting Started
 
-API keys (optional but recommended):
+### 1️⃣ Prerequisites
 
-OPENAI_API_KEY
+* **Python:** 3.10+
+* **Virtual Environment:** Recommended
+* **API Keys (Optional):** `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
 
-ANTHROPIC_API_KEY
+### 2️⃣ Install Dependencies
 
-2️⃣ Install Dependencies
+```bash
+# Create Virtual Environment
+# Linux / macOS
 python -m venv .venv
-source .venv/bin/activate   # Linux / macOS
-.venv\Scripts\activate      # Windows
+source .venv/bin/activate
 
+# Windows
+python -m venv .venv
+.venv\Scripts\activate
+
+# Install Requirements
 pip install -r requirements.txt
 
-3️⃣ Run the Server
+```
+
+### 3️⃣ Run the Server
+
+```bash
 uvicorn cloud.api.main:app --reload
 
+```
 
-Server runs at:
+Server runs at: `http://localhost:8000`
 
-http://localhost:8000
+---
 
-🧪 Usage Examples
-🔹 Basic Query
-POST /v1/assistant/query
+## 🧪 Usage Examples
 
+### 🔹 Basic Query
+
+**POST** `/v1/assistant/query`
+
+```json
 {
   "message": "what time is it"
 }
 
-🔹 Run a Shell Command (MCP)
+```
+
+### 🔹 Run a Shell Command (MCP)
+
+**POST** `/v1/assistant/query`
+
+```json
 {
   "message": "Run command dir"
 }
 
+```
 
-Cypher will:
+**Cypher will:**
 
-Detect execution intent
+1. Detect execution intent.
+2. Plan an MCP shell call.
+3. Execute safely.
+4. Return structured output.
 
-Plan an MCP shell call
+---
 
-Execute safely
+## 🧪 Debug & Inspection Endpoints
 
-Return structured output
+| Endpoint | Purpose |
+| --- | --- |
+| `/v1/assistant/debug/trace` | Execution timeline |
+| `/v1/assistant/debug/plan` | Planner decisions |
+| `/v1/assistant/debug/memory` | Episodic memory |
+| `/v1/assistant/debug/metrics` | MCP metrics |
+| `/v1/assistant/debug/trace/heatmap` | Performance analysis |
 
-🧪 Debug & Inspection Endpoints
-Endpoint	Purpose
-/v1/assistant/debug/trace	Execution timeline
-/v1/assistant/debug/plan	Planner decisions
-/v1/assistant/debug/memory	Episodic memory
-/v1/assistant/debug/metrics	MCP metrics
-/v1/assistant/debug/trace/heatmap	Performance analysis
-🔐 Safety Guarantees
+---
 
-Explicit execution modes
+## 🔐 Safety Guarantees
 
-No implicit command execution
+* **Explicit execution modes** (No implicit command execution).
+* **MCP availability checks** before execution.
+* **Deterministic fallbacks** to ensure reliability.
+* **Full traceability** of every action taken by the system.
 
-MCP availability checks
+## 🧭 Roadmap (Beyond Phase 4)
 
-Deterministic fallbacks
+* [ ] Offline-first mode
+* [ ] Multi-agent parallel execution
+* [ ] Enterprise tenancy
+* [ ] Persistent long-term memory
+* [ ] AR / Hardware interfaces
+* [ ] Plugin marketplace
 
-Full traceability of actions
+---
 
-🧭 Roadmap (Beyond Phase 4)
-
-Offline-first mode
-
-Multi-agent parallel execution
-
-Enterprise tenancy
-
-Persistent long-term memory
-
-AR / hardware interfaces
-
-Plugin marketplace
-
-📜 License
+## 📜 License
 
 MIT (or your preferred license)
 
-⭐ Final Note
+> **⭐ Final Note:** Project Cypher is not a chatbot. It is an AI Operating System designed for real-world control, automation, and intelligence — with the rigor required for production systems.
 
-Project Cypher is not a chatbot.
-It is an AI Operating System designed for real-world control, automation, and intelligence — with the rigor required for production systems.
+```
+
+```
