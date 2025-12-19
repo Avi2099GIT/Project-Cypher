@@ -1,6 +1,4 @@
-Here is the raw Markdown code. You can copy this directly into a file named `README.md`.
 
-```markdown
 # Project Cypher 🧠⚙️
 
 ### An AI Operating System for Real-World Execution, Automation, and Intelligence
